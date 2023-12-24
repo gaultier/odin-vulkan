@@ -7,6 +7,7 @@ import "core:os"
 import "core:strings"
 import "vendor:sdl2"
 
+import "vk"
 
 frame_duration_ms: u32 = 1 / 60
 
@@ -16,7 +17,16 @@ main :: proc() {
 	}
 	sdl2.LogSetAllPriority(.VERBOSE)
 
-	window := sdl2.CreateWindow("Hello", 0,0, 800, 600, {sdl2.WindowFlags.VULKAN})
+	if sdl2.Vulkan_LoadLibrary(nil) < 0 {
+		sdl2.LogCritical(
+			c.int(sdl2.LogCategory.ERROR),
+			"Failed to load vulkan library: %s",
+			sdl2.GetError(),
+		)
+		os.exit(1)
+	}
+
+	window := sdl2.CreateWindow("Hello", 0, 0, 800, 600, {sdl2.WindowFlags.VULKAN})
 	if window == nil {
 		sdl2.LogCritical(
 			c.int(sdl2.LogCategory.ERROR),
@@ -26,6 +36,7 @@ main :: proc() {
 		os.exit(1)
 	}
 
+	instance := vk.create_instance(window)
 
 	for {
 		begin_frame_ms := sdl2.GetTicks()
@@ -42,7 +53,6 @@ main :: proc() {
 				}
 			}
 		}
-
 
 
 		end_frame_ms := sdl2.GetTicks()
