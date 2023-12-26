@@ -8,7 +8,7 @@ import "vendor:vulkan"
 
 VALIDATION_LAYERS := [?]cstring{"VK_LAYER_KHRONOS_validation"}
 
-get_extension_names :: proc(window: ^sdl2.Window) -> []cstring {
+get_instance_extensions :: proc(window: ^sdl2.Window) -> []cstring {
 	extension_count: u32 = 0
 	if !sdl2.Vulkan_GetInstanceExtensions(window, &extension_count, nil) {
 		sdl2.LogCritical(
@@ -31,33 +31,7 @@ get_extension_names :: proc(window: ^sdl2.Window) -> []cstring {
 	return extension_names
 }
 
-create_instance :: proc(window: ^sdl2.Window) -> vulkan.Instance {
-	getInstanceProcAddr := sdl2.Vulkan_GetVkGetInstanceProcAddr()
-	assert(getInstanceProcAddr != nil)
-
-	vulkan.load_proc_addresses_global(getInstanceProcAddr)
-	assert(vulkan.CreateInstance != nil)
-
-	app_info: vulkan.ApplicationInfo = {
-		sType              = .APPLICATION_INFO,
-		applicationVersion = vulkan.MAKE_VERSION(0, 0, 1),
-		engineVersion      = vulkan.MAKE_VERSION(0, 0, 1),
-		apiVersion         = vulkan.MAKE_VERSION(1, 0, 0),
-	}
-
-	extension_names := get_extension_names(window)
-	for e in extension_names {
-		fmt.println(e)
-	}
-
-	create_info: vulkan.InstanceCreateInfo = {
-		sType                   = .INSTANCE_CREATE_INFO,
-		pApplicationInfo        = &app_info,
-		enabledExtensionCount   = u32(len(extension_names)),
-		ppEnabledExtensionNames = raw_data(extension_names),
-	}
-
-	when ODIN_DEBUG {
+enable_validation_layers :: proc(create_info: ^vulkan.InstanceCreateInfo) {
 		layer_count: u32 = 0
 		if r := vulkan.EnumerateInstanceLayerProperties(&layer_count, nil); r != .SUCCESS {
 			sdl2.LogCritical(
@@ -97,6 +71,36 @@ if name == cstring(&layer.layerName[0]) do continue outer;
 				c.int(sdl2.LogCategory.APPLICATION),
 				"Validation layers enabled"
 				)
+}
+
+create_instance :: proc(window: ^sdl2.Window) -> vulkan.Instance {
+	getInstanceProcAddr := sdl2.Vulkan_GetVkGetInstanceProcAddr()
+	assert(getInstanceProcAddr != nil)
+
+	vulkan.load_proc_addresses_global(getInstanceProcAddr)
+	assert(vulkan.CreateInstance != nil)
+
+	app_info: vulkan.ApplicationInfo = {
+		sType              = .APPLICATION_INFO,
+		applicationVersion = vulkan.MAKE_VERSION(0, 0, 1),
+		engineVersion      = vulkan.MAKE_VERSION(0, 0, 1),
+		apiVersion         = vulkan.MAKE_VERSION(1, 0, 0),
+	}
+
+	extension_names := get_instance_extensions(window)
+	for e in extension_names {
+		fmt.println(e)
+	}
+
+	create_info: vulkan.InstanceCreateInfo = {
+		sType                   = .INSTANCE_CREATE_INFO,
+		pApplicationInfo        = &app_info,
+		enabledExtensionCount   = u32(len(extension_names)),
+		ppEnabledExtensionNames = raw_data(extension_names),
+	}
+
+	when ODIN_DEBUG {
+		enable_validation_layers(&create_info)
 	}
 
 	instance: vulkan.Instance = {}
