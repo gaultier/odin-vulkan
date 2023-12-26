@@ -32,13 +32,17 @@ get_extension_names :: proc(window: ^sdl2.Window) -> []cstring {
 }
 
 create_instance :: proc(window: ^sdl2.Window) -> vulkan.Instance {
+	getInstanceProcAddr := sdl2.Vulkan_GetVkGetInstanceProcAddr()
+	assert(getInstanceProcAddr != nil)
+
+	vulkan.load_proc_addresses_global(getInstanceProcAddr)
+	assert(vulkan.CreateInstance != nil)
+
 	app_info: vulkan.ApplicationInfo = {
 		sType              = .APPLICATION_INFO,
-		pApplicationName   = "Hello",
-		pEngineName        = "No Engine",
 		applicationVersion = vulkan.MAKE_VERSION(0, 0, 1),
 		engineVersion      = vulkan.MAKE_VERSION(0, 0, 1),
-		apiVersion         = vulkan.MAKE_VERSION(0, 0, 1),
+		apiVersion         = vulkan.MAKE_VERSION(1, 0, 0),
 	}
 
 	extension_names := get_extension_names(window)
@@ -53,49 +57,50 @@ create_instance :: proc(window: ^sdl2.Window) -> vulkan.Instance {
 		ppEnabledExtensionNames = raw_data(extension_names),
 	}
 
-	//	when ODIN_DEBUG {
-	//		layer_count: u32 = 0
-	//		if r := vulkan.EnumerateInstanceLayerProperties(&layer_count, nil); r != .SUCCESS {
-	//			sdl2.LogCritical(
-	//				c.int(sdl2.LogCategory.ERROR),
-	//				"Failed to get layer count: %d",
-	//				r
-	//			)
-	//			os.exit(1)
-	//		}
+	when ODIN_DEBUG {
+		layer_count: u32 = 0
+		if r := vulkan.EnumerateInstanceLayerProperties(&layer_count, nil); r != .SUCCESS {
+			sdl2.LogCritical(
+				c.int(sdl2.LogCategory.ERROR),
+				"Failed to get layer count: %d",
+				r
+			)
+			os.exit(1)
+		}
 
 
-	//	layers := make([]vulkan.LayerProperties, layer_count)
-	//		if r := vulkan.EnumerateInstanceLayerProperties(&layer_count, raw_data(layers)); r != .SUCCESS {
-	//			sdl2.LogCritical(
-	//				c.int(sdl2.LogCategory.ERROR),
-	//				"Failed to get layer count: %d",
-	//				r
-	//			)
-	//			os.exit(1)
-	//		}
+	layers := make([]vulkan.LayerProperties, layer_count)
+		if r := vulkan.EnumerateInstanceLayerProperties(&layer_count, raw_data(layers)); r != .SUCCESS {
+			sdl2.LogCritical(
+				c.int(sdl2.LogCategory.ERROR),
+				"Failed to get layer count: %d",
+				r
+			)
+			os.exit(1)
+		}
 
-	//		outer : for name in VALIDATION_LAYERS {
-	//			for layer in &layers {
-	//if name == cstring(&layer.layerName[0]) do continue outer;
-	//			}
-	//			sdl2.LogCritical(
-	//				c.int(sdl2.LogCategory.ERROR),
-	//				"Validation layer not available: %s",
-	//				name)
-	//			os.exit(1)
-	//		}
-	//	
-	//		create_info.ppEnabledLayerNames = &VALIDATION_LAYERS[0]
-	//		create_info.enabledLayerCount = len(VALIDATION_LAYERS)
-	//
-	//			sdl2.LogDebug(
-	//				c.int(sdl2.LogCategory.APPLICATION),
-	//				"Validation layers enabled"
-	//				)
-	//}
+		outer : for name in VALIDATION_LAYERS {
+			for layer in &layers {
+if name == cstring(&layer.layerName[0]) do continue outer;
+			}
+			sdl2.LogCritical(
+				c.int(sdl2.LogCategory.ERROR),
+				"Validation layer not available: %s",
+				name)
+			os.exit(1)
+		}
+	
+		create_info.ppEnabledLayerNames = &VALIDATION_LAYERS[0]
+		create_info.enabledLayerCount = len(VALIDATION_LAYERS)
+
+			sdl2.LogDebug(
+				c.int(sdl2.LogCategory.APPLICATION),
+				"Validation layers enabled"
+				)
+	}
 
 	instance: vulkan.Instance = {}
+	assert(vulkan.CreateInstance !=nil)
 	if r := vulkan.CreateInstance(&create_info, nil, &instance); r != .SUCCESS {
 		fmt.eprintf("Failed to CreateInstance: %d\n", r)
 	}
