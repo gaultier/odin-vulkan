@@ -1,4 +1,3 @@
-
 package main
 
 import "core:c"
@@ -36,7 +35,7 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	instance := vk.create_instance(window)
+	vk.setup(window)
 
 	for {
 		begin_frame_ms := sdl2.GetTicks()

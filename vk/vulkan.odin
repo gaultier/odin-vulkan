@@ -106,10 +106,13 @@ create_instance :: proc(window: ^sdl2.Window) -> vulkan.Instance {
 		fmt.eprintf("Failed to CreateInstance: %d\n", r)
 	}
 
+	vulkan.load_proc_addresses_instance(instance)
 	return instance
 }
 
-pick_physical_device :: proc(instance : vulkan.Instance) {
+pick_physical_device :: proc(instance : vulkan.Instance) -> (vulkan.PhysicalDevice, bool) {
+	assert(vulkan.EnumeratePhysicalDevices!=nil)
+
 	device_count : u32 = 0	
 	if r := vulkan.EnumeratePhysicalDevices(instance, &device_count, nil); r != .SUCCESS {
 			sdl2.LogCritical(
@@ -139,12 +142,33 @@ pick_physical_device :: proc(instance : vulkan.Instance) {
 	}
 
 	for d in devices {
+		fmt.println(d)
 		if !is_device_suitable(d) do continue
+
+		return d, true
 	}
+
+	return nil, false
 }
 
 is_device_suitable :: proc(device: vulkan.PhysicalDevice) -> bool {
 	properties : vulkan.PhysicalDeviceProperties = {}
   vulkan.GetPhysicalDeviceProperties(device, &properties)
-	return true
+
+	features : vulkan.PhysicalDeviceFeatures ={}
+	vulkan.GetPhysicalDeviceFeatures(device, &features)
+
+	return properties.deviceType==.INTEGRATED_GPU  || properties.deviceType==.DISCRETE_GPU 
+}
+
+setup :: proc(window: ^sdl2.Window) {
+	instance := create_instance(window)
+	physical_device, found := pick_physical_device(instance)
+	if !found {
+			sdl2.LogCritical(
+				c.int(sdl2.LogCategory.ERROR),
+				"Failed to find a suitable physical device"
+			)
+			os.exit(1)
+	}
 }
