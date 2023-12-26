@@ -67,10 +67,7 @@ if name == cstring(&layer.layerName[0]) do continue outer;
 		create_info.ppEnabledLayerNames = &VALIDATION_LAYERS[0]
 		create_info.enabledLayerCount = len(VALIDATION_LAYERS)
 
-			sdl2.LogDebug(
-				c.int(sdl2.LogCategory.APPLICATION),
-				"Validation layers enabled"
-				)
+		sdl2.LogDebug( c.int(sdl2.LogCategory.APPLICATION), "Validation layers enabled")
 }
 
 create_instance :: proc(window: ^sdl2.Window) -> vulkan.Instance {
@@ -110,4 +107,44 @@ create_instance :: proc(window: ^sdl2.Window) -> vulkan.Instance {
 	}
 
 	return instance
+}
+
+pick_physical_device :: proc(instance : vulkan.Instance) {
+	device_count : u32 = 0	
+	if r := vulkan.EnumeratePhysicalDevices(instance, &device_count, nil); r != .SUCCESS {
+			sdl2.LogCritical(
+				c.int(sdl2.LogCategory.ERROR),
+				"Failed to get layer count: %d",
+				r
+			)
+			os.exit(1)
+	}
+	if device_count == 0 {
+			sdl2.LogCritical(
+				c.int(sdl2.LogCategory.ERROR),
+				"No physical devices"
+			)
+			os.exit(1)
+	}
+
+	devices := make([]vulkan.PhysicalDevice, device_count)
+
+	if r := vulkan.EnumeratePhysicalDevices(instance, &device_count, raw_data(devices)); r != .SUCCESS {
+			sdl2.LogCritical(
+				c.int(sdl2.LogCategory.ERROR),
+				"Failed to get layer count: %d",
+				r
+			)
+			os.exit(1)
+	}
+
+	for d in devices {
+		if !is_device_suitable(d) do continue
+	}
+}
+
+is_device_suitable :: proc(device: vulkan.PhysicalDevice) -> bool {
+	properties : vulkan.PhysicalDeviceProperties = {}
+  vulkan.GetPhysicalDeviceProperties(device, &properties)
+	return true
 }
