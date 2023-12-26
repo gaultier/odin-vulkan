@@ -86,7 +86,11 @@ create_instance :: proc(window: ^sdl2.Window) -> vulkan.Instance {
 
 	extension_names := get_instance_extensions(window)
 	for e in extension_names {
-		fmt.println(e)
+			sdl2.LogDebug(
+				c.int(sdl2.LogCategory.APPLICATION),
+				"Extension: %s",
+				e
+			)
 	}
 
 	create_info: vulkan.InstanceCreateInfo = {
@@ -103,7 +107,12 @@ create_instance :: proc(window: ^sdl2.Window) -> vulkan.Instance {
 	instance: vulkan.Instance = {}
 	assert(vulkan.CreateInstance !=nil)
 	if r := vulkan.CreateInstance(&create_info, nil, &instance); r != .SUCCESS {
-		fmt.eprintf("Failed to CreateInstance: %d\n", r)
+			sdl2.LogCritical(
+				c.int(sdl2.LogCategory.ERROR),
+				"Failed to get layer count: %d",
+				r
+			)
+			os.exit(1)
 	}
 
 	vulkan.load_proc_addresses_instance(instance)
@@ -142,7 +151,6 @@ pick_physical_device :: proc(instance : vulkan.Instance) -> (vulkan.PhysicalDevi
 	}
 
 	for d in devices {
-		fmt.println(d)
 		if !is_device_suitable(d) do continue
 
 		return d, true
@@ -171,4 +179,13 @@ setup :: proc(window: ^sdl2.Window) {
 			)
 			os.exit(1)
 	}
+}
+
+find_queue_families :: proc(device : vulkan.PhysicalDevice) -> u32 {
+	count : u32 = 0
+	vulkan.GetPhysicalDeviceQueueFamilyProperties(device, &count, nil)
+
+	properties := make([]vulkan.QueueFamilyProperties, count)
+
+	return 0 // FIXME
 }
