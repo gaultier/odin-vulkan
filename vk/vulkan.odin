@@ -205,6 +205,7 @@ setup :: proc(window: ^sdl2.Window) {
 	image_views := create_image_views(logical_device, images, image_format)
 
 	create_graphics_pipeline(logical_device, extent)
+	create_render_pass(logical_device, image_format)
 }
 
 pick_queue_family :: proc(device: vulkan.PhysicalDevice) -> (u32, bool) {
@@ -602,7 +603,6 @@ create_graphics_pipeline :: proc(device: vulkan.Device, swapchain_extent: vulkan
 		sdl2.LogCritical(ERR, "Failed to create pipeline layout: %d", r)
 		os.exit(1)
 	}
-
 }
 
 create_shader_module :: proc(device: vulkan.Device, bytecode: []byte) -> vulkan.ShaderModule {
@@ -620,4 +620,11 @@ create_shader_module :: proc(device: vulkan.Device, bytecode: []byte) -> vulkan.
 	}
 
 	return shader_module
+}
+
+create_render_pass :: proc(device: vulkan.Device, swapchain_image_format: vulkan.Format) {
+	color_attachment: vulkan.AttachmentDescription = {
+		format = swapchain_image_format,
+		samples = {._1},
+	}
 }
