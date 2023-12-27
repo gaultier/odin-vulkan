@@ -347,3 +347,15 @@ query_swapchain_support :: proc(
 
 	return details
 }
+
+pick_swapchain_surface_format :: proc(
+	formats: []vulkan.SurfaceFormatKHR,
+) -> vulkan.SurfaceFormatKHR {
+	assert(len(formats) > 0)
+
+	for format in formats {
+		if format.format == .B8G8R8A8_SRGB && format.colorSpace == .SRGB_NONLINEAR do return format
+	}
+
+	return formats[0]
+}
