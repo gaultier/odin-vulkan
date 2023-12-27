@@ -1,6 +1,7 @@
 package vk
 
 import "core:c"
+import "core:strings"
 import "core:fmt"
 import "core:os"
 import "vendor:sdl2"
@@ -60,7 +61,9 @@ enable_validation_layers :: proc() -> []cstring {
 
 		outer : for name in VALIDATION_LAYERS {
 			for layer in &layers {
-if name == cstring(&layer.layerName[0]) do continue outer;
+				layerName :=transmute(cstring)raw_data(layer.layerName[:])
+				fmt.println(layerName)
+				if name == layerName do continue outer;
 			}
 			sdl2.LogCritical(
 				ERR,
