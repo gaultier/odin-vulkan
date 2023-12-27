@@ -554,6 +554,23 @@ create_graphics_pipeline :: proc(device: vulkan.Device, swapchain_extent: vulkan
 		maxDepth = 1.0,
 	}
 
+	scissor: vulkan.Rect2D = {
+		extent = swapchain_extent,
+	}
+
+	viewport_state: vulkan.PipelineViewportStateCreateInfo = {
+		sType         = .PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+		viewportCount = 1,
+		scissorCount  = 1,
+	}
+
+	rasterizer: vulkan.PipelineRasterizationStateCreateInfo = {
+		sType = .PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+		polygonMode = .FILL,
+		lineWidth = 1.0,
+		cullMode = {.BACK},
+		frontFace = .CLOCKWISE,
+	}
 }
 
 create_shader_module :: proc(device: vulkan.Device, bytecode: []byte) -> vulkan.ShaderModule {
