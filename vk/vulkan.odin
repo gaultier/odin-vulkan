@@ -204,7 +204,7 @@ setup :: proc(window: ^sdl2.Window) {
 
 	image_views := create_image_views(logical_device, images, image_format)
 
-	create_graphics_pipeline(logical_device)
+	create_graphics_pipeline(logical_device, extent)
 }
 
 pick_queue_family :: proc(device: vulkan.PhysicalDevice) -> (u32, bool) {
@@ -490,7 +490,7 @@ create_image_views :: proc(
 	return image_views
 }
 
-create_graphics_pipeline :: proc(device: vulkan.Device) {
+create_graphics_pipeline :: proc(device: vulkan.Device, swapchain_extent: vulkan.Extent2D) {
 	vert_bytecode: []byte
 	ok: bool
 	vert_bytecode, ok = os.read_entire_file_from_filename("vert.spv")
@@ -548,6 +548,11 @@ create_graphics_pipeline :: proc(device: vulkan.Device) {
 		topology = .TRIANGLE_LIST,
 	}
 
+	viewport: vulkan.Viewport = {
+		width    = f32(swapchain_extent.width),
+		height   = f32(swapchain_extent.height),
+		maxDepth = 1.0,
+	}
 
 }
 
