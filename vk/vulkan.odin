@@ -571,6 +571,22 @@ create_graphics_pipeline :: proc(device: vulkan.Device, swapchain_extent: vulkan
 		cullMode = {.BACK},
 		frontFace = .CLOCKWISE,
 	}
+
+	color_blend_attachment: vulkan.PipelineColorBlendAttachmentState = {
+		colorWriteMask = {.R, .G, .B, .A},
+		srcColorBlendFactor = .ONE,
+		dstColorBlendFactor = .ZERO,
+		colorBlendOp = .ADD,
+		srcAlphaBlendFactor = .ONE,
+		dstAlphaBlendFactor = .ZERO,
+		alphaBlendOp = .ADD,
+	}
+
+	color_blending: vulkan.PipelineColorBlendStateCreateInfo = {
+		sType           = .PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+		attachmentCount = 1,
+		pAttachments    = &color_blend_attachment,
+	}
 }
 
 create_shader_module :: proc(device: vulkan.Device, bytecode: []byte) -> vulkan.ShaderModule {
