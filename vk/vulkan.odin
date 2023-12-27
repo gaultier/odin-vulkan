@@ -205,7 +205,7 @@ setup :: proc(window: ^sdl2.Window) {
 	image_views := create_image_views(logical_device, images, image_format)
 
 	render_pass := create_render_pass(logical_device, image_format)
-	create_graphics_pipeline(logical_device, extent, render_pass)
+	pipeline := create_graphics_pipeline(logical_device, extent, render_pass)
 }
 
 pick_queue_family :: proc(device: vulkan.PhysicalDevice) -> (u32, bool) {
@@ -495,7 +495,7 @@ create_graphics_pipeline :: proc(
 	device: vulkan.Device,
 	swapchain_extent: vulkan.Extent2D,
 	render_pass: vulkan.RenderPass,
-) {
+) -> vulkan.Pipeline {
 	vert_bytecode: []byte
 	ok: bool
 	vert_bytecode, ok = os.read_entire_file_from_filename("vert.spv")
@@ -637,6 +637,7 @@ create_graphics_pipeline :: proc(
 		os.exit(1)
 	}
 
+	return pipeline
 }
 
 create_shader_module :: proc(device: vulkan.Device, bytecode: []byte) -> vulkan.ShaderModule {
