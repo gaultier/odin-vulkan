@@ -203,6 +203,8 @@ setup :: proc(window: ^sdl2.Window) {
 	)
 
 	image_views := create_image_views(logical_device, images, image_format)
+
+	create_graphics_pipeline(logical_device)
 }
 
 pick_queue_family :: proc(device: vulkan.PhysicalDevice) -> (u32, bool) {
@@ -488,5 +490,80 @@ create_image_views :: proc(
 	return image_views
 }
 
-create_graphics_pipeline :: proc() {
+create_graphics_pipeline :: proc(device: vulkan.Device) {
+	vert_bytecode: []byte
+	ok: bool
+	vert_bytecode, ok = os.read_entire_file_from_filename("vert.spv")
+	if !ok {
+		sdl2.LogCritical(ERR, "Failed to load vert.spv")
+		os.exit(1)
+	}
+	vert_shader_module := create_shader_module(device, vert_bytecode)
+	defer vulkan.DestroyShaderModule(device, vert_shader_module, nil)
+
+	frag_bytecode: []byte
+	frag_bytecode, ok = os.read_entire_file_from_filename("frag.spv")
+	if !ok {
+		sdl2.LogCritical(ERR, "Failed to load frag.spv")
+		os.exit(1)
+	}
+
+	frag_shader_module := create_shader_module(device, frag_bytecode)
+	defer vulkan.DestroyShaderModule(device, frag_shader_module, nil)
+
+
+	vert_shader_stage_info: vulkan.PipelineShaderStageCreateInfo = {
+		sType = .PIPELINE_SHADER_STAGE_CREATE_INFO,
+		stage = {.VERTEX},
+		module = vert_shader_module,
+		pName = "main",
+	}
+
+	frag_shader_stage_info: vulkan.PipelineShaderStageCreateInfo = {
+		sType = .PIPELINE_SHADER_STAGE_CREATE_INFO,
+		stage = {.FRAGMENT},
+		module = frag_shader_module,
+		pName = "main",
+	}
+
+	shader_stages: [2]vulkan.PipelineShaderStageCreateInfo =  {
+		vert_shader_stage_info,
+		frag_shader_stage_info,
+	}
+
+	dynamic_states: [2]vulkan.DynamicState = {.VIEWPORT, .SCISSOR}
+
+	dynamic_state: vulkan.PipelineDynamicStateCreateInfo = {
+		sType             = .PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+		dynamicStateCount = len(dynamic_states),
+		pDynamicStates    = raw_data(dynamic_states[:]),
+	}
+
+	vertex_input_info: vulkan.PipelineVertexInputStateCreateInfo = {
+		sType = .PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+	}
+
+	input_assembly: vulkan.PipelineInputAssemblyStateCreateInfo = {
+		sType    = .PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+		topology = .TRIANGLE_LIST,
+	}
+
+
+}
+
+create_shader_module :: proc(device: vulkan.Device, bytecode: []byte) -> vulkan.ShaderModule {
+	create_info: vulkan.ShaderModuleCreateInfo = {
+		sType    = .SHADER_MODULE_CREATE_INFO,
+		codeSize = len(bytecode),
+		pCode    = transmute(^u32)raw_data(bytecode),
+	}
+
+	shader_module: vulkan.ShaderModule = {}
+
+	if r := vulkan.CreateShaderModule(device, &create_info, nil, &shader_module); r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to create shader module: %d", r)
+		os.exit(1)
+	}
+
+	return shader_module
 }
