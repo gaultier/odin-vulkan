@@ -626,5 +626,35 @@ create_render_pass :: proc(device: vulkan.Device, swapchain_image_format: vulkan
 	color_attachment: vulkan.AttachmentDescription = {
 		format = swapchain_image_format,
 		samples = {._1},
+		loadOp = .CLEAR,
+		storeOp = .STORE,
+		stencilLoadOp = .DONT_CARE,
+		stencilStoreOp = .DONT_CARE,
+		initialLayout = .UNDEFINED,
+		finalLayout = .PRESENT_SRC_KHR,
+	}
+
+	color_attachment_ref: vulkan.AttachmentReference = {
+		layout = .COLOR_ATTACHMENT_OPTIMAL,
+	}
+
+	subpass: vulkan.SubpassDescription = {
+		pipelineBindPoint    = .GRAPHICS,
+		colorAttachmentCount = 1,
+		pColorAttachments    = &color_attachment_ref,
+	}
+
+	render_pass: vulkan.RenderPass = {}
+	render_pass_create_info: vulkan.RenderPassCreateInfo = {
+		sType           = .RENDER_PASS_CREATE_INFO,
+		attachmentCount = 1,
+		pAttachments    = &color_attachment,
+		subpassCount    = 1,
+		pSubpasses      = &subpass,
+	}
+	if r := vulkan.CreateRenderPass(device, &render_pass_create_info, nil, &render_pass);
+	   r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to create render pass: %d", r)
+		os.exit(1)
 	}
 }
