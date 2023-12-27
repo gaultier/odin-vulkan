@@ -204,8 +204,8 @@ setup :: proc(window: ^sdl2.Window) {
 
 	image_views := create_image_views(logical_device, images, image_format)
 
-	create_graphics_pipeline(logical_device, extent)
 	render_pass := create_render_pass(logical_device, image_format)
+	create_graphics_pipeline(logical_device, extent, render_pass)
 }
 
 pick_queue_family :: proc(device: vulkan.PhysicalDevice) -> (u32, bool) {
@@ -491,7 +491,11 @@ create_image_views :: proc(
 	return image_views
 }
 
-create_graphics_pipeline :: proc(device: vulkan.Device, swapchain_extent: vulkan.Extent2D) {
+create_graphics_pipeline :: proc(
+	device: vulkan.Device,
+	swapchain_extent: vulkan.Extent2D,
+	render_pass: vulkan.RenderPass,
+) {
 	vert_bytecode: []byte
 	ok: bool
 	vert_bytecode, ok = os.read_entire_file_from_filename("vert.spv")
@@ -573,6 +577,12 @@ create_graphics_pipeline :: proc(device: vulkan.Device, swapchain_extent: vulkan
 		frontFace = .CLOCKWISE,
 	}
 
+	multisampling: vulkan.PipelineMultisampleStateCreateInfo = {
+		sType = .PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+		rasterizationSamples = {._1},
+		minSampleShading = 1.0,
+	}
+
 	color_blend_attachment: vulkan.PipelineColorBlendAttachmentState = {
 		colorWriteMask = {.R, .G, .B, .A},
 		srcColorBlendFactor = .ONE,
@@ -603,6 +613,30 @@ create_graphics_pipeline :: proc(device: vulkan.Device, swapchain_extent: vulkan
 		sdl2.LogCritical(ERR, "Failed to create pipeline layout: %d", r)
 		os.exit(1)
 	}
+
+	pipeline_create_info: vulkan.GraphicsPipelineCreateInfo = {
+		sType               = .GRAPHICS_PIPELINE_CREATE_INFO,
+		stageCount          = 2,
+		pStages             = raw_data(shader_stages[:]),
+		pVertexInputState   = &vertex_input_info,
+		pInputAssemblyState = &input_assembly,
+		pViewportState      = &viewport_state,
+		pRasterizationState = &rasterizer,
+		pMultisampleState   = &multisampling,
+		pColorBlendState    = &color_blending,
+		pDynamicState       = &dynamic_state,
+		layout              = pipeline_layout,
+		renderPass          = render_pass,
+		basePipelineIndex   = -1,
+	}
+
+	pipeline: vulkan.Pipeline = {}
+	if r := vulkan.CreateGraphicsPipelines(device, 0, 1, &pipeline_create_info, nil, &pipeline);
+	   r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to create pipeline: %d", r)
+		os.exit(1)
+	}
+
 }
 
 create_shader_module :: proc(device: vulkan.Device, bytecode: []byte) -> vulkan.ShaderModule {
