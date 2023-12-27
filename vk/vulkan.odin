@@ -201,6 +201,8 @@ setup :: proc(window: ^sdl2.Window) {
 		logical_device,
 		surface,
 	)
+
+	image_views := create_image_views(logical_device, images, image_format)
 }
 
 pick_queue_family :: proc(device: vulkan.PhysicalDevice) -> (u32, bool) {
@@ -459,4 +461,29 @@ create_swapchain :: proc(
 	}
 
 	return swapchain, images, surface_format.format, extent
+}
+
+create_image_views :: proc(device: vulkan.Device, images: []vulkan.Image, swapchain_image_format: vulkan.Format) -> []vulkan.ImageView {
+	image_views := make([]vulkan.ImageView, len(images))
+
+	for image_view, i in &image_views {
+		create_info: vulkan.ImageViewCreateInfo = {
+			sType    = .IMAGE_VIEW_CREATE_INFO,
+			image    = images[i],
+			viewType = .D2,
+			format   = swapchain_image_format,
+			subresourceRange ={
+				aspectMask = {.COLOR},
+				levelCount = 1,
+				layerCount = 1,
+			}
+		}
+
+		if r := vulkan.CreateImageView(device, &create_info, nil, &image_view); r!=.SUCCESS {
+				sdl2.LogCritical(ERR, "Failed to create image view: %d", r)
+				os.exit(1)
+		}
+	}
+
+	return image_views
 }
