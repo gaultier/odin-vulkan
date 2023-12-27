@@ -14,6 +14,12 @@ VALIDATION_LAYERS := [?]cstring{"VK_LAYER_KHRONOS_validation"}
 
 REQUIRED_EXTENSIONS := [?]cstring{vulkan.KHR_SWAPCHAIN_EXTENSION_NAME}
 
+SwapchainSupportDetails :: struct {
+	capabilities:  vulkan.SurfaceCapabilitiesKHR,
+	formats:       []vulkan.SurfaceFormatKHR,
+	present_modes: []vulkan.PresentModeKHR,
+}
+
 get_instance_extensions :: proc(window: ^sdl2.Window) -> []cstring {
 	extension_count: u32 = 0
 	if !sdl2.Vulkan_GetInstanceExtensions(window, &extension_count, nil) {
@@ -103,7 +109,13 @@ create_instance :: proc(window: ^sdl2.Window) -> vulkan.Instance {
 	return instance
 }
 
-pick_physical_device :: proc(instance: vulkan.Instance) -> (vulkan.PhysicalDevice, bool) {
+pick_physical_device :: proc(
+	instance: vulkan.Instance,
+	surface: vulkan.SurfaceKHR,
+) -> (
+	vulkan.PhysicalDevice,
+	bool,
+) {
 	assert(vulkan.EnumeratePhysicalDevices != nil)
 
 	device_count: u32 = 0
@@ -125,7 +137,7 @@ pick_physical_device :: proc(instance: vulkan.Instance) -> (vulkan.PhysicalDevic
 	}
 
 	for d in devices {
-		if !is_device_suitable(d) do continue
+		if !is_device_suitable(d, surface) do continue
 
 		return d, true
 	}
@@ -133,15 +145,23 @@ pick_physical_device :: proc(instance: vulkan.Instance) -> (vulkan.PhysicalDevic
 	return nil, false
 }
 
-is_device_suitable :: proc(device: vulkan.PhysicalDevice) -> bool {
+is_device_suitable :: proc(device: vulkan.PhysicalDevice, surface: vulkan.SurfaceKHR) -> bool {
 	properties: vulkan.PhysicalDeviceProperties = {}
 	vulkan.GetPhysicalDeviceProperties(device, &properties)
 
 	features: vulkan.PhysicalDeviceFeatures = {}
 	vulkan.GetPhysicalDeviceFeatures(device, &features)
 
+	if !has_device_extension_support(device) do return false
+
 	is_gpu := properties.deviceType == .INTEGRATED_GPU || properties.deviceType == .DISCRETE_GPU
-	return is_gpu
+
+	swapchain_support_details := query_swapchain_support(device, surface)
+	is_swapchain_suitable :=
+		len(swapchain_support_details.formats) > 0 &&
+		len(swapchain_support_details.present_modes) > 0
+
+	return is_gpu && is_swapchain_suitable
 }
 
 setup :: proc(window: ^sdl2.Window) {
@@ -153,7 +173,7 @@ setup :: proc(window: ^sdl2.Window) {
 		os.exit(1)
 	}
 
-	physical_device, found := pick_physical_device(instance)
+	physical_device, found := pick_physical_device(instance, surface)
 	if !found {
 		sdl2.LogCritical(ERR, "Failed to find a suitable physical device")
 		os.exit(1)
@@ -193,7 +213,6 @@ create_logical_device :: proc(
 	vulkan.Device,
 	vulkan.Queue,
 ) {
-	ensure_device_extension_support(physical_device)
 
 	priority: f32 = 1.0
 
@@ -234,7 +253,7 @@ create_logical_device :: proc(
 	return logical_device, queue
 }
 
-ensure_device_extension_support :: proc(device: vulkan.PhysicalDevice) {
+has_device_extension_support :: proc(device: vulkan.PhysicalDevice) -> bool {
 	count: u32 = 0
 	if r := vulkan.EnumerateDeviceExtensionProperties(device, nil, &count, nil); r != .SUCCESS {
 		sdl2.LogCritical(ERR, "Failed to enumerate device extension properties: %d", r)
@@ -255,7 +274,76 @@ ensure_device_extension_support :: proc(device: vulkan.PhysicalDevice) {
 			extensionName := transmute(cstring)&p.extensionName[0]
 			if r == extensionName do continue outer
 		}
-		sdl2.LogCritical(ERR, "Failed to find required extension: %s", r)
-		os.exit(1)
+		return false
 	}
+	return true
+}
+
+query_swapchain_support :: proc(
+	device: vulkan.PhysicalDevice,
+	surface: vulkan.SurfaceKHR,
+) -> SwapchainSupportDetails {
+	details: SwapchainSupportDetails = {}
+
+	{
+		if r := vulkan.GetPhysicalDeviceSurfaceCapabilitiesKHR(
+			device,
+			surface,
+			&details.capabilities,
+		); r != .SUCCESS {
+			sdl2.LogCritical(ERR, "Failed to create logical device: %d", r)
+			os.exit(1)
+		}
+	}
+
+	{
+		format_count: u32 = 0
+		if r := vulkan.GetPhysicalDeviceSurfaceFormatsKHR(device, surface, &format_count, nil);
+		   r != .SUCCESS {
+			sdl2.LogCritical(ERR, "Failed to get surface formats: %d", r)
+			os.exit(1)
+		}
+
+		if format_count != 0 {
+			details.formats = make([]vulkan.SurfaceFormatKHR, format_count)
+			if r := vulkan.GetPhysicalDeviceSurfaceFormatsKHR(
+				device,
+				surface,
+				&format_count,
+				raw_data(details.formats),
+			); r != .SUCCESS {
+				sdl2.LogCritical(ERR, "Failed to get surface formats: %d", r)
+				os.exit(1)
+
+			}
+		}
+	}
+
+	{
+		present_mode_count: u32 = 0
+		if r := vulkan.GetPhysicalDeviceSurfacePresentModesKHR(
+			device,
+			surface,
+			&present_mode_count,
+			nil,
+		); r != .SUCCESS {
+			sdl2.LogCritical(ERR, "Failed to get surface present modes: %d", r)
+			os.exit(1)
+		}
+
+		if present_mode_count != 0 {
+			details.present_modes = make([]vulkan.PresentModeKHR, present_mode_count)
+			if r := vulkan.GetPhysicalDeviceSurfacePresentModesKHR(
+				device,
+				surface,
+				&present_mode_count,
+				raw_data(details.present_modes),
+			); r != .SUCCESS {
+				sdl2.LogCritical(ERR, "Failed to get surface present modes: %d", r)
+				os.exit(1)
+			}
+		}
+	}
+
+	return details
 }
