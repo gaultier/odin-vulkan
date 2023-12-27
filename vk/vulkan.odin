@@ -587,6 +587,22 @@ create_graphics_pipeline :: proc(device: vulkan.Device, swapchain_extent: vulkan
 		attachmentCount = 1,
 		pAttachments    = &color_blend_attachment,
 	}
+
+	pipeline_layout_create_info: vulkan.PipelineLayoutCreateInfo = {
+		sType = .PIPELINE_LAYOUT_CREATE_INFO,
+	}
+	pipeline_layout: vulkan.PipelineLayout = {}
+
+	if r := vulkan.CreatePipelineLayout(
+		device,
+		&pipeline_layout_create_info,
+		nil,
+		&pipeline_layout,
+	); r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to create pipeline layout: %d", r)
+		os.exit(1)
+	}
+
 }
 
 create_shader_module :: proc(device: vulkan.Device, bytecode: []byte) -> vulkan.ShaderModule {
