@@ -114,6 +114,7 @@ pick_physical_device :: proc(
 	surface: vulkan.SurfaceKHR,
 ) -> (
 	vulkan.PhysicalDevice,
+	SwapchainSupportDetails,
 	bool,
 ) {
 	assert(vulkan.EnumeratePhysicalDevices != nil)
@@ -137,22 +138,29 @@ pick_physical_device :: proc(
 	}
 
 	for d in devices {
-		if !is_device_suitable(d, surface) do continue
+		details, suitable := is_device_suitable(d, surface)
+		if !suitable do continue
 
-		return d, true
+		return d, details, true
 	}
 
-	return nil, false
+	return nil, {}, false
 }
 
-is_device_suitable :: proc(device: vulkan.PhysicalDevice, surface: vulkan.SurfaceKHR) -> bool {
+is_device_suitable :: proc(
+	device: vulkan.PhysicalDevice,
+	surface: vulkan.SurfaceKHR,
+) -> (
+	SwapchainSupportDetails,
+	bool,
+) {
 	properties: vulkan.PhysicalDeviceProperties = {}
 	vulkan.GetPhysicalDeviceProperties(device, &properties)
 
 	features: vulkan.PhysicalDeviceFeatures = {}
 	vulkan.GetPhysicalDeviceFeatures(device, &features)
 
-	if !has_device_extension_support(device) do return false
+	if !has_device_extension_support(device) do return {}, false
 
 	is_gpu := properties.deviceType == .INTEGRATED_GPU || properties.deviceType == .DISCRETE_GPU
 
@@ -161,7 +169,7 @@ is_device_suitable :: proc(device: vulkan.PhysicalDevice, surface: vulkan.Surfac
 		len(swapchain_support_details.formats) > 0 &&
 		len(swapchain_support_details.present_modes) > 0
 
-	return is_gpu && is_swapchain_suitable
+	return swapchain_support_details, is_gpu && is_swapchain_suitable
 }
 
 setup :: proc(window: ^sdl2.Window) {
@@ -173,7 +181,7 @@ setup :: proc(window: ^sdl2.Window) {
 		os.exit(1)
 	}
 
-	physical_device, found := pick_physical_device(instance, surface)
+	physical_device, swapchain_support_details, found := pick_physical_device(instance, surface)
 	if !found {
 		sdl2.LogCritical(ERR, "Failed to find a suitable physical device")
 		os.exit(1)
@@ -188,6 +196,7 @@ setup :: proc(window: ^sdl2.Window) {
 
 	logical_device, queue := create_logical_device(physical_device, queue_family)
 
+	swapchain := create_swapchain(swapchain_support_details, logical_device, surface)
 }
 
 pick_queue_family :: proc(device: vulkan.PhysicalDevice) -> (u32, bool) {
@@ -358,4 +367,74 @@ pick_swapchain_surface_format :: proc(
 	}
 
 	return formats[0]
+}
+
+pick_swapchain_present_mode :: proc(
+	present_modes: []vulkan.PresentModeKHR,
+) -> vulkan.PresentModeKHR {
+	return .FIFO
+}
+
+pick_swapchain_extent :: proc(capabilities: vulkan.SurfaceCapabilitiesKHR) -> vulkan.Extent2D {
+	if capabilities.currentExtent.width != max(u32) do return capabilities.currentExtent
+
+	mode: sdl2.DisplayMode = {}
+	if sdl2.GetCurrentDisplayMode(0, &mode) < 0 {
+		sdl2.LogCritical(ERR, "Failed to get current display mode: %s", sdl2.GetError())
+		os.exit(1)
+	}
+
+	w: u32 = clamp(
+		u32(mode.w),
+		capabilities.minImageExtent.width,
+		capabilities.maxImageExtent.width,
+	)
+	h: u32 = clamp(
+		u32(mode.h),
+		capabilities.minImageExtent.height,
+		capabilities.maxImageExtent.height,
+	)
+
+
+	return vulkan.Extent2D{width = w, height = h}
+}
+
+create_swapchain :: proc(
+	details: SwapchainSupportDetails,
+	device: vulkan.Device,
+	surface: vulkan.SurfaceKHR,
+) -> vulkan.SwapchainKHR {
+	surface_format := pick_swapchain_surface_format(details.formats)
+	present_mode := pick_swapchain_present_mode(details.present_modes)
+	extent := pick_swapchain_extent(details.capabilities)
+
+	image_count := clamp(
+		details.capabilities.minImageCount + 1,
+		details.capabilities.minImageCount,
+		details.capabilities.maxImageCount,
+	)
+
+	create_info: vulkan.SwapchainCreateInfoKHR = {
+		sType = .SWAPCHAIN_CREATE_INFO_KHR,
+		surface = surface,
+		minImageCount = image_count,
+		imageFormat = surface_format.format,
+		imageColorSpace = surface_format.colorSpace,
+		imageExtent = extent,
+		imageArrayLayers = 1,
+		imageUsage = {.COLOR_ATTACHMENT},
+		imageSharingMode = .EXCLUSIVE, // Assume 1 queue family.
+		preTransform = details.capabilities.currentTransform,
+		compositeAlpha = {.OPAQUE},
+		presentMode = present_mode,
+		clipped = true,
+	}
+
+	swapchain: vulkan.SwapchainKHR = {}
+	if r := vulkan.CreateSwapchainKHR(device, &create_info, nil, &swapchain); r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to get create swapchain: %d", r)
+		os.exit(1)
+	}
+
+	return swapchain
 }
