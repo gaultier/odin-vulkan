@@ -6,13 +6,16 @@ import "core:os"
 import "vendor:sdl2"
 import "vendor:vulkan"
 
+ERR : c.int : c.int(sdl2.LogCategory.ERROR)
+APP : c.int : c.int(sdl2.LogCategory.APPLICATION)
+
 VALIDATION_LAYERS := [?]cstring{"VK_LAYER_KHRONOS_validation"}
 
 get_instance_extensions :: proc(window: ^sdl2.Window) -> []cstring {
 	extension_count: u32 = 0
 	if !sdl2.Vulkan_GetInstanceExtensions(window, &extension_count, nil) {
 		sdl2.LogCritical(
-			c.int(sdl2.LogCategory.ERROR),
+			ERR,
 			"Failed to get extensions count: %s",
 			sdl2.GetError(),
 		)
@@ -21,7 +24,7 @@ get_instance_extensions :: proc(window: ^sdl2.Window) -> []cstring {
 	extension_names := make([]cstring, extension_count)
 	if !sdl2.Vulkan_GetInstanceExtensions(window, &extension_count, raw_data(extension_names)) {
 		sdl2.LogCritical(
-			c.int(sdl2.LogCategory.ERROR),
+			ERR,
 			"Failed to get extension names: %s",
 			sdl2.GetError(),
 		)
@@ -35,7 +38,7 @@ enable_validation_layers :: proc(create_info: ^vulkan.InstanceCreateInfo) {
 		layer_count: u32 = 0
 		if r := vulkan.EnumerateInstanceLayerProperties(&layer_count, nil); r != .SUCCESS {
 			sdl2.LogCritical(
-				c.int(sdl2.LogCategory.ERROR),
+				ERR,
 				"Failed to get layer count: %d",
 				r
 			)
@@ -46,7 +49,7 @@ enable_validation_layers :: proc(create_info: ^vulkan.InstanceCreateInfo) {
 	layers := make([]vulkan.LayerProperties, layer_count)
 		if r := vulkan.EnumerateInstanceLayerProperties(&layer_count, raw_data(layers)); r != .SUCCESS {
 			sdl2.LogCritical(
-				c.int(sdl2.LogCategory.ERROR),
+				ERR,
 				"Failed to get layer count: %d",
 				r
 			)
@@ -58,7 +61,7 @@ enable_validation_layers :: proc(create_info: ^vulkan.InstanceCreateInfo) {
 if name == cstring(&layer.layerName[0]) do continue outer;
 			}
 			sdl2.LogCritical(
-				c.int(sdl2.LogCategory.ERROR),
+				ERR,
 				"Validation layer not available: %s",
 				name)
 			os.exit(1)
@@ -67,7 +70,7 @@ if name == cstring(&layer.layerName[0]) do continue outer;
 		create_info.ppEnabledLayerNames = &VALIDATION_LAYERS[0]
 		create_info.enabledLayerCount = len(VALIDATION_LAYERS)
 
-		sdl2.LogDebug( c.int(sdl2.LogCategory.APPLICATION), "Validation layers enabled")
+		sdl2.LogDebug( APP, "Validation layers enabled")
 }
 
 create_instance :: proc(window: ^sdl2.Window) -> vulkan.Instance {
@@ -87,7 +90,7 @@ create_instance :: proc(window: ^sdl2.Window) -> vulkan.Instance {
 	extension_names := get_instance_extensions(window)
 	for e in extension_names {
 			sdl2.LogDebug(
-				c.int(sdl2.LogCategory.APPLICATION),
+				APP,
 				"Extension: %s",
 				e
 			)
@@ -108,7 +111,7 @@ create_instance :: proc(window: ^sdl2.Window) -> vulkan.Instance {
 	assert(vulkan.CreateInstance !=nil)
 	if r := vulkan.CreateInstance(&create_info, nil, &instance); r != .SUCCESS {
 			sdl2.LogCritical(
-				c.int(sdl2.LogCategory.ERROR),
+				ERR,
 				"Failed to get layer count: %d",
 				r
 			)
@@ -125,7 +128,7 @@ pick_physical_device :: proc(instance : vulkan.Instance) -> (vulkan.PhysicalDevi
 	device_count : u32 = 0	
 	if r := vulkan.EnumeratePhysicalDevices(instance, &device_count, nil); r != .SUCCESS {
 			sdl2.LogCritical(
-				c.int(sdl2.LogCategory.ERROR),
+				ERR,
 				"Failed to get layer count: %d",
 				r
 			)
@@ -133,7 +136,7 @@ pick_physical_device :: proc(instance : vulkan.Instance) -> (vulkan.PhysicalDevi
 	}
 	if device_count == 0 {
 			sdl2.LogCritical(
-				c.int(sdl2.LogCategory.ERROR),
+				ERR,
 				"No physical devices"
 			)
 			os.exit(1)
@@ -143,7 +146,7 @@ pick_physical_device :: proc(instance : vulkan.Instance) -> (vulkan.PhysicalDevi
 
 	if r := vulkan.EnumeratePhysicalDevices(instance, &device_count, raw_data(devices)); r != .SUCCESS {
 			sdl2.LogCritical(
-				c.int(sdl2.LogCategory.ERROR),
+				ERR,
 				"Failed to get layer count: %d",
 				r
 			)
@@ -174,18 +177,36 @@ setup :: proc(window: ^sdl2.Window) {
 	physical_device, found := pick_physical_device(instance)
 	if !found {
 			sdl2.LogCritical(
-				c.int(sdl2.LogCategory.ERROR),
+				ERR,
 				"Failed to find a suitable physical device"
 			)
 			os.exit(1)
 	}
+	
+	queue_family : u32 = 0
+	queue_family, found = pick_queue_family(physical_device)
+	if !found {
+			sdl2.LogCritical(
+				ERR,
+				"Failed to find a suitable queue family"
+			)
+			os.exit(1)
+	}
+
 }
 
-find_queue_families :: proc(device : vulkan.PhysicalDevice) -> u32 {
+pick_queue_family :: proc(device : vulkan.PhysicalDevice) -> (u32, bool) {
 	count : u32 = 0
 	vulkan.GetPhysicalDeviceQueueFamilyProperties(device, &count, nil)
 
 	properties := make([]vulkan.QueueFamilyProperties, count)
+	vulkan.GetPhysicalDeviceQueueFamilyProperties(device, &count, raw_data(properties))
 
-	return 0 // FIXME
+	for q, i in properties {
+		if .GRAPHICS in q.queueFlags {
+			return u32(i), true
+		}
+	}
+
+	return 0, false
 }
