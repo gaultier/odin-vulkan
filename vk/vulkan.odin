@@ -196,7 +196,7 @@ setup :: proc(window: ^sdl2.Window) {
 
 	logical_device, queue := create_logical_device(physical_device, queue_family)
 
-	swapchain := create_swapchain(swapchain_support_details, logical_device, surface)
+	swapchain, images := create_swapchain(swapchain_support_details, logical_device, surface)
 }
 
 pick_queue_family :: proc(device: vulkan.PhysicalDevice) -> (u32, bool) {
@@ -403,12 +403,15 @@ create_swapchain :: proc(
 	details: SwapchainSupportDetails,
 	device: vulkan.Device,
 	surface: vulkan.SurfaceKHR,
-) -> vulkan.SwapchainKHR {
+) -> (
+	vulkan.SwapchainKHR,
+	[]vulkan.Image,
+) {
 	surface_format := pick_swapchain_surface_format(details.formats)
 	present_mode := pick_swapchain_present_mode(details.present_modes)
 	extent := pick_swapchain_extent(details.capabilities)
 
-	image_count := clamp(
+	min_image_count := clamp(
 		details.capabilities.minImageCount + 1,
 		details.capabilities.minImageCount,
 		details.capabilities.maxImageCount,
@@ -417,7 +420,7 @@ create_swapchain :: proc(
 	create_info: vulkan.SwapchainCreateInfoKHR = {
 		sType = .SWAPCHAIN_CREATE_INFO_KHR,
 		surface = surface,
-		minImageCount = image_count,
+		minImageCount = min_image_count,
 		imageFormat = surface_format.format,
 		imageColorSpace = surface_format.colorSpace,
 		imageExtent = extent,
@@ -436,5 +439,18 @@ create_swapchain :: proc(
 		os.exit(1)
 	}
 
-	return swapchain
+	actual_image_count: u32 = 0
+	if r := vulkan.GetSwapchainImagesKHR(device, swapchain, &actual_image_count, nil); r != nil {
+		sdl2.LogCritical(ERR, "Failed to get swapchain images: %d", r)
+		os.exit(1)
+	}
+
+	images := make([]vulkan.Image, actual_image_count)
+	if r := vulkan.GetSwapchainImagesKHR(device, swapchain, &actual_image_count, raw_data(images));
+	   r != nil {
+		sdl2.LogCritical(ERR, "Failed to get swapchain images: %d", r)
+		os.exit(1)
+	}
+
+	return swapchain, images
 }
