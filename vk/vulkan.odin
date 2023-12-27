@@ -176,6 +176,17 @@ is_device_suitable :: proc(device: vulkan.PhysicalDevice) -> bool {
 
 setup :: proc(window: ^sdl2.Window) {
 	instance := create_instance(window)
+
+	surface : vulkan.SurfaceKHR = {}
+	if !sdl2.Vulkan_CreateSurface(window, instance, &surface){
+		sdl2.LogCritical(
+			ERR,
+			"Failed to create surface: %s",
+			sdl2.GetError(),
+		)
+		os.exit(1)
+	}
+
 	physical_device, found := pick_physical_device(instance)
 	if !found {
 			sdl2.LogCritical(
