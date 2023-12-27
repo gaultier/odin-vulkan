@@ -12,6 +12,8 @@ APP : c.int : c.int(sdl2.LogCategory.APPLICATION)
 
 VALIDATION_LAYERS := [?]cstring{"VK_LAYER_KHRONOS_validation"}
 
+REQUIRED_EXTENSIONS := [?]cstring{vulkan.KHR_SWAPCHAIN_EXTENSION_NAME}
+
 get_instance_extensions :: proc(window: ^sdl2.Window) -> []cstring {
 	extension_count: u32 = 0
 	if !sdl2.Vulkan_GetInstanceExtensions(window, &extension_count, nil) {
@@ -61,7 +63,7 @@ enable_validation_layers :: proc() -> []cstring {
 
 		outer : for name in VALIDATION_LAYERS {
 			for layer in &layers {
-				layerName :=transmute(cstring)raw_data(layer.layerName[:])
+				layerName :=transmute(cstring)&layer.layerName[0]
 				fmt.println(layerName)
 				if name == layerName do continue outer;
 			}
@@ -174,7 +176,8 @@ is_device_suitable :: proc(device: vulkan.PhysicalDevice) -> bool {
 	features : vulkan.PhysicalDeviceFeatures ={}
 	vulkan.GetPhysicalDeviceFeatures(device, &features)
 
-	return properties.deviceType==.INTEGRATED_GPU  || properties.deviceType==.DISCRETE_GPU 
+	is_gpu := properties.deviceType==.INTEGRATED_GPU  || properties.deviceType==.DISCRETE_GPU 
+	return is_gpu
 }
 
 setup :: proc(window: ^sdl2.Window) {
@@ -265,4 +268,41 @@ create_logical_device :: proc(physical_device : vulkan.PhysicalDevice, queue_idx
 	vulkan.GetDeviceQueue(logical_device, queue_idx, 0, &queue)
 	
 	return logical_device, queue
+}
+
+device_ensure_extension_support :: proc(device: vulkan.PhysicalDevice) {
+	 count : u32 = 0
+	 if r := vulkan.EnumerateDeviceExtensionProperties(device, nil, &count, nil); r!=.SUCCESS {
+		sdl2.LogCritical(
+			ERR,
+			"Failed to enumerate device extension properties: %d",
+			r
+		)
+		os.exit(1)
+	 }
+
+	 properties := make([]vulkan.ExtensionProperties, count)
+	 defer delete(properties)
+
+	 if r := vulkan.EnumerateDeviceExtensionProperties(device, nil, &count, raw_data(properties)); r!=.SUCCESS {
+		sdl2.LogCritical(
+			ERR,
+			"Failed to enumerate device extension properties: %d",
+			r
+		)
+		os.exit(1)
+	 }
+
+	 outer:	for r in REQUIRED_EXTENSIONS {
+		 for p in &properties {
+			 extensionName := transmute(cstring)&p.extensionName[0]
+			 if r == extensionName do continue outer;
+		 }	
+		sdl2.LogCritical(
+			ERR,
+			"Failed to find required extension: %s",
+			r
+		)
+		os.exit(1)
+	 }
 }
