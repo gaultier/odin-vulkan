@@ -203,9 +203,9 @@ setup :: proc(window: ^sdl2.Window) {
 	)
 
 	image_views := create_image_views(logical_device, images, image_format)
-
 	render_pass := create_render_pass(logical_device, image_format)
 	pipeline := create_graphics_pipeline(logical_device, extent, render_pass)
+	frame_buffers := create_framebuffers(logical_device, image_views, render_pass, extent)
 }
 
 pick_queue_family :: proc(device: vulkan.PhysicalDevice) -> (u32, bool) {
@@ -697,4 +697,36 @@ create_render_pass :: proc(
 	}
 
 	return render_pass
+}
+
+create_framebuffers :: proc(
+	device: vulkan.Device,
+	image_views: []vulkan.ImageView,
+	render_pass: vulkan.RenderPass,
+	extent: vulkan.Extent2D,
+) -> []vulkan.Framebuffer {
+	framebuffers := make([]vulkan.Framebuffer, len(image_views))
+
+	for view, i in image_views {
+		attachments: [1]vulkan.ImageView = {view}
+
+		framebuffer_create_info: vulkan.FramebufferCreateInfo = {
+			sType           = .FRAMEBUFFER_CREATE_INFO,
+			renderPass      = render_pass,
+			attachmentCount = 1,
+			pAttachments    = raw_data(attachments[:]),
+			width           = extent.width,
+			height          = extent.height,
+			layers          = 1,
+		}
+
+		if r := vulkan.CreateFramebuffer(device, &framebuffer_create_info, nil, &framebuffers[i]);
+		   r != .SUCCESS {
+			sdl2.LogCritical(ERR, "Failed to create framebuffer: %d", r)
+			os.exit(1)
+		}
+
+	}
+
+	return framebuffers
 }
