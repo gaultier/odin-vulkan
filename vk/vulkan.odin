@@ -34,7 +34,7 @@ get_instance_extensions :: proc(window: ^sdl2.Window) -> []cstring {
 	return extension_names
 }
 
-enable_validation_layers :: proc(create_info: ^vulkan.InstanceCreateInfo) {
+enable_validation_layers :: proc() -> []cstring {
 		layer_count: u32 = 0
 		if r := vulkan.EnumerateInstanceLayerProperties(&layer_count, nil); r != .SUCCESS {
 			sdl2.LogCritical(
@@ -47,6 +47,8 @@ enable_validation_layers :: proc(create_info: ^vulkan.InstanceCreateInfo) {
 
 
 	layers := make([]vulkan.LayerProperties, layer_count)
+	defer delete(layers)
+
 		if r := vulkan.EnumerateInstanceLayerProperties(&layer_count, raw_data(layers)); r != .SUCCESS {
 			sdl2.LogCritical(
 				ERR,
@@ -67,10 +69,8 @@ if name == cstring(&layer.layerName[0]) do continue outer;
 			os.exit(1)
 		}
 	
-		create_info.ppEnabledLayerNames = &VALIDATION_LAYERS[0]
-		create_info.enabledLayerCount = len(VALIDATION_LAYERS)
-
 		sdl2.LogDebug( APP, "Validation layers enabled")
+		return VALIDATION_LAYERS[:]
 }
 
 create_instance :: proc(window: ^sdl2.Window) -> vulkan.Instance {
@@ -104,7 +104,9 @@ create_instance :: proc(window: ^sdl2.Window) -> vulkan.Instance {
 	}
 
 	when ODIN_DEBUG {
-		enable_validation_layers(&create_info)
+		layers := enable_validation_layers()
+		create_info.enabledLayerCount = u32(len(layers))
+		create_info.ppEnabledLayerNames = raw_data(layers)
 	}
 
 	instance: vulkan.Instance = {}
@@ -186,12 +188,11 @@ setup :: proc(window: ^sdl2.Window) {
 	queue_family : u32 = 0
 	queue_family, found = pick_queue_family(physical_device)
 	if !found {
-			sdl2.LogCritical(
-				ERR,
-				"Failed to find a suitable queue family"
-			)
+			sdl2.LogCritical( ERR, "Failed to find a suitable queue family")
 			os.exit(1)
 	}
+
+	logical_device := create_logical_device(physical_device, queue_family)
 
 }
 
@@ -209,4 +210,42 @@ pick_queue_family :: proc(device : vulkan.PhysicalDevice) -> (u32, bool) {
 	}
 
 	return 0, false
+}
+
+create_logical_device :: proc(physical_device : vulkan.PhysicalDevice, queue_idx: u32) -> vulkan.Device {
+	priority : f32 = 1.0
+
+	queue_create_info : vulkan.DeviceQueueCreateInfo = {
+		sType=.DEVICE_QUEUE_CREATE_INFO,
+		queueFamilyIndex = queue_idx,
+		queueCount = 1,
+		pQueuePriorities = &priority,
+	}
+
+	features : vulkan.PhysicalDeviceFeatures = {}
+
+	device_create_info : vulkan.DeviceCreateInfo = {
+		sType = .DEVICE_CREATE_INFO,
+		pQueueCreateInfos = &queue_create_info,
+		queueCreateInfoCount = 1,
+		pEnabledFeatures = &features,
+	}
+
+	when ODIN_DEBUG {
+		layers := enable_validation_layers()
+		device_create_info.enabledLayerCount = u32(len(layers))
+		device_create_info.ppEnabledLayerNames = raw_data(layers)
+	}
+
+	logical_device : vulkan.Device = {}
+	if r := vulkan.CreateDevice(physical_device, &device_create_info, nil, &logical_device); r != .SUCCESS{
+		sdl2.LogCritical(
+			ERR,
+			"Failed to create logical device: %d",
+			r
+		)
+		os.exit(1)
+	}
+	
+	return logical_device
 }
