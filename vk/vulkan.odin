@@ -196,7 +196,11 @@ setup :: proc(window: ^sdl2.Window) {
 
 	logical_device, queue := create_logical_device(physical_device, queue_family)
 
-	swapchain, images := create_swapchain(swapchain_support_details, logical_device, surface)
+	swapchain, images, image_format, extent := create_swapchain(
+		swapchain_support_details,
+		logical_device,
+		surface,
+	)
 }
 
 pick_queue_family :: proc(device: vulkan.PhysicalDevice) -> (u32, bool) {
@@ -406,6 +410,8 @@ create_swapchain :: proc(
 ) -> (
 	vulkan.SwapchainKHR,
 	[]vulkan.Image,
+	vulkan.Format,
+	vulkan.Extent2D,
 ) {
 	surface_format := pick_swapchain_surface_format(details.formats)
 	present_mode := pick_swapchain_present_mode(details.present_modes)
@@ -452,5 +458,5 @@ create_swapchain :: proc(
 		os.exit(1)
 	}
 
-	return swapchain, images
+	return swapchain, images, surface_format.format, extent
 }
