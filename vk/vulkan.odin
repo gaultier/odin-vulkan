@@ -195,24 +195,24 @@ create_logical_device :: proc(
 ) {
 	ensure_device_extension_support(physical_device)
 
-	priority: f32 : 1.0
+	priority: f32 = 1.0
 
 	queue_create_info: vulkan.DeviceQueueCreateInfo = {
-		sType                   = .DEVICE_QUEUE_CREATE_INFO,
-		queueFamilyIndex        = queue_idx,
-		queueCount              = 1,
-		pQueuePriorities        = &priority,
-		enabledExtensionCount   = len(REQUIRED_EXTENSIONS),
-		ppEnabledExtensionNames = raw_data(REQUIRED_EXTENSIONS),
+		sType            = .DEVICE_QUEUE_CREATE_INFO,
+		queueFamilyIndex = queue_idx,
+		queueCount       = 1,
+		pQueuePriorities = &priority,
 	}
 
 	features: vulkan.PhysicalDeviceFeatures = {}
 
 	device_create_info: vulkan.DeviceCreateInfo = {
-		sType                = .DEVICE_CREATE_INFO,
-		pQueueCreateInfos    = &queue_create_info,
-		queueCreateInfoCount = 1,
-		pEnabledFeatures     = &features,
+		sType                   = .DEVICE_CREATE_INFO,
+		pQueueCreateInfos       = &queue_create_info,
+		queueCreateInfoCount    = 1,
+		pEnabledFeatures        = &features,
+		enabledExtensionCount   = len(REQUIRED_EXTENSIONS),
+		ppEnabledExtensionNames = raw_data(REQUIRED_EXTENSIONS[:]),
 	}
 
 	when ODIN_DEBUG {
