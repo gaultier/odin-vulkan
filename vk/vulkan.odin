@@ -192,7 +192,7 @@ setup :: proc(window: ^sdl2.Window) {
 			os.exit(1)
 	}
 
-	logical_device := create_logical_device(physical_device, queue_family)
+	logical_device, queue := create_logical_device(physical_device, queue_family)
 
 }
 
@@ -212,7 +212,7 @@ pick_queue_family :: proc(device : vulkan.PhysicalDevice) -> (u32, bool) {
 	return 0, false
 }
 
-create_logical_device :: proc(physical_device : vulkan.PhysicalDevice, queue_idx: u32) -> vulkan.Device {
+create_logical_device :: proc(physical_device : vulkan.PhysicalDevice, queue_idx: u32) -> (vulkan.Device, vulkan.Queue) {
 	priority : f32 = 1.0
 
 	queue_create_info : vulkan.DeviceQueueCreateInfo = {
@@ -246,6 +246,9 @@ create_logical_device :: proc(physical_device : vulkan.PhysicalDevice, queue_idx
 		)
 		os.exit(1)
 	}
+
+	queue : vulkan.Queue = {}
+	vulkan.GetDeviceQueue(logical_device, queue_idx, 0, &queue)
 	
-	return logical_device
+	return logical_device, queue
 }
