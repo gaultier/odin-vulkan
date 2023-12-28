@@ -732,12 +732,21 @@ create_render_pass :: proc(
 	}
 
 	render_pass: vulkan.RenderPass = {}
+
+	dependency: vulkan.SubpassDependency = {
+		srcSubpass = vulkan.SUBPASS_EXTERNAL,
+		srcStageMask = {.COLOR_ATTACHMENT_OUTPUT},
+		dstStageMask = {.COLOR_ATTACHMENT_OUTPUT},
+		dstAccessMask = {.COLOR_ATTACHMENT_WRITE},
+	}
 	render_pass_create_info: vulkan.RenderPassCreateInfo = {
 		sType           = .RENDER_PASS_CREATE_INFO,
 		attachmentCount = 1,
 		pAttachments    = &color_attachment,
 		subpassCount    = 1,
 		pSubpasses      = &subpass,
+		dependencyCount = 1,
+		pDependencies   = &dependency,
 	}
 	if r := vulkan.CreateRenderPass(device, &render_pass_create_info, nil, &render_pass);
 	   r != .SUCCESS {
@@ -930,6 +939,12 @@ draw_frame :: proc(renderer: ^Renderer) {
 		os.exit(1)
 	}
 
+	if r := vulkan.ResetFences(renderer.logical_device, 1, &renderer.in_flight_fence);
+	   r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to reset fences: %d", r)
+		os.exit(1)
+	}
+
 	image_idx: u32 = 0
 	if r := vulkan.AcquireNextImageKHR(
 		renderer.logical_device,
@@ -979,4 +994,19 @@ draw_frame :: proc(renderer: ^Renderer) {
 		os.exit(1)
 	}
 
+
+	swapchains := [?]vulkan.SwapchainKHR{renderer.swapchain}
+	present_info: vulkan.PresentInfoKHR = {
+		sType              = .PRESENT_INFO_KHR,
+		waitSemaphoreCount = 1,
+		pWaitSemaphores    = raw_data(signal_semaphores[:]),
+		swapchainCount     = 1,
+		pSwapchains        = raw_data(swapchains[:]),
+		pImageIndices      = &image_idx,
+	}
+
+	if r := vulkan.QueuePresentKHR(renderer.graphics_queue, &present_info); r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to present queue: %d", r)
+		os.exit(1)
+	}
 }

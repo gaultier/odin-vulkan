@@ -53,6 +53,8 @@ main :: proc() {
 			}
 		}
 
+		vk.draw_frame(&renderer)
+
 
 		end_frame_ms := sdl2.GetTicks()
 		assert(begin_frame_ms <= end_frame_ms)
