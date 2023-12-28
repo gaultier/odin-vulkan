@@ -14,7 +14,10 @@ APP: c.int : c.int(sdl2.LogCategory.APPLICATION)
 
 VALIDATION_LAYERS := [?]cstring{"VK_LAYER_KHRONOS_validation"}
 
-REQUIRED_EXTENSIONS := [?]cstring{vulkan.KHR_SWAPCHAIN_EXTENSION_NAME}
+REQUIRED_EXTENSIONS := [?]cstring {
+	vulkan.KHR_SWAPCHAIN_EXTENSION_NAME,
+	vulkan.KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+}
 
 SwapchainSupportDetails :: struct {
 	capabilities:  vulkan.SurfaceCapabilitiesKHR,
@@ -32,8 +35,6 @@ Renderer :: struct {
 	logical_device:             vulkan.Device,
 	command_buffers:            [MAX_IN_FLIGHT_IMAGES]vulkan.CommandBuffer,
 	command_pool:               vulkan.CommandPool,
-	render_pass:                vulkan.RenderPass,
-	frame_buffers:              []vulkan.Framebuffer,
 	pipeline:                   vulkan.Pipeline,
 	physical_device:            vulkan.PhysicalDevice,
 	images:                     []vulkan.Image,
@@ -231,9 +232,7 @@ setup :: proc(window: ^sdl2.Window) -> Renderer {
 	)
 
 	image_views := create_image_views(logical_device, images, image_format)
-	render_pass := create_render_pass(logical_device, image_format)
-	pipeline, pipeline_layout := create_graphics_pipeline(logical_device, extent, render_pass)
-	frame_buffers := create_framebuffers(logical_device, image_views, render_pass, extent)
+	pipeline, pipeline_layout := create_graphics_pipeline(logical_device, extent, image_format)
 	command_pool := create_command_pool(logical_device)
 	command_buffers := create_command_buffers(logical_device, command_pool)
 
@@ -251,8 +250,6 @@ setup :: proc(window: ^sdl2.Window) -> Renderer {
 			pipeline = pipeline,
 			command_buffers = command_buffers,
 			command_pool = command_pool,
-			render_pass = render_pass,
-			frame_buffers = frame_buffers,
 			instance = instance,
 			swapchain = swapchain,
 			images = images,
@@ -301,8 +298,14 @@ create_logical_device :: proc(
 
 	features: vulkan.PhysicalDeviceFeatures = {}
 
+	dynamic_rendering_feature: vulkan.PhysicalDeviceDynamicRenderingFeatures = {
+			sType            = .PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
+			dynamicRendering = true,
+		}
+
 	device_create_info: vulkan.DeviceCreateInfo = {
 			sType                   = .DEVICE_CREATE_INFO,
+			pNext                   = &dynamic_rendering_feature,
 			pQueueCreateInfos       = &queue_create_info,
 			queueCreateInfoCount    = 1,
 			pEnabledFeatures        = &features,
@@ -559,7 +562,7 @@ create_image_views :: proc(
 create_graphics_pipeline :: proc(
 	device: vulkan.Device,
 	swapchain_extent: vulkan.Extent2D,
-	render_pass: vulkan.RenderPass,
+	swapchain_image_format: vulkan.Format,
 ) -> (
 	vulkan.Pipeline,
 	vulkan.PipelineLayout,
@@ -682,8 +685,17 @@ create_graphics_pipeline :: proc(
 		os.exit(1)
 	}
 
+	color_attachment_formats := [1]vulkan.Format{swapchain_image_format}
+
+	pipeline_rendering_create_info: vulkan.PipelineRenderingCreateInfo = {
+		sType                   = .PIPELINE_RENDERING_CREATE_INFO,
+		colorAttachmentCount    = 1,
+		pColorAttachmentFormats = &color_attachment_formats[0],
+	}
+
 	pipeline_create_info: vulkan.GraphicsPipelineCreateInfo = {
 		sType               = .GRAPHICS_PIPELINE_CREATE_INFO,
+		pNext               = &pipeline_rendering_create_info,
 		stageCount          = 2,
 		pStages             = raw_data(shader_stages[:]),
 		pVertexInputState   = &vertex_input_info,
@@ -694,7 +706,6 @@ create_graphics_pipeline :: proc(
 		pColorBlendState    = &color_blending,
 		pDynamicState       = &dynamic_state,
 		layout              = pipeline_layout,
-		renderPass          = render_pass,
 		basePipelineIndex   = -1,
 	}
 
@@ -725,88 +736,6 @@ create_shader_module :: proc(device: vulkan.Device, bytecode: []byte) -> vulkan.
 	return shader_module
 }
 
-create_render_pass :: proc(
-	device: vulkan.Device,
-	swapchain_image_format: vulkan.Format,
-) -> vulkan.RenderPass {
-	color_attachment: vulkan.AttachmentDescription = {
-		format = swapchain_image_format,
-		samples = {._1},
-		loadOp = .CLEAR,
-		storeOp = .STORE,
-		stencilLoadOp = .DONT_CARE,
-		stencilStoreOp = .DONT_CARE,
-		initialLayout = .UNDEFINED,
-		finalLayout = .PRESENT_SRC_KHR,
-	}
-
-	color_attachment_ref: vulkan.AttachmentReference = {
-		layout = .COLOR_ATTACHMENT_OPTIMAL,
-	}
-
-	subpass: vulkan.SubpassDescription = {
-		pipelineBindPoint    = .GRAPHICS,
-		colorAttachmentCount = 1,
-		pColorAttachments    = &color_attachment_ref,
-	}
-
-	render_pass: vulkan.RenderPass = {}
-
-	dependency: vulkan.SubpassDependency = {
-		srcSubpass = vulkan.SUBPASS_EXTERNAL,
-		srcStageMask = {.COLOR_ATTACHMENT_OUTPUT},
-		dstStageMask = {.COLOR_ATTACHMENT_OUTPUT},
-		dstAccessMask = {.COLOR_ATTACHMENT_WRITE},
-	}
-	render_pass_create_info: vulkan.RenderPassCreateInfo = {
-		sType           = .RENDER_PASS_CREATE_INFO,
-		attachmentCount = 1,
-		pAttachments    = &color_attachment,
-		subpassCount    = 1,
-		pSubpasses      = &subpass,
-		dependencyCount = 1,
-		pDependencies   = &dependency,
-	}
-	if r := vulkan.CreateRenderPass(device, &render_pass_create_info, nil, &render_pass);
-	   r != .SUCCESS {
-		sdl2.LogCritical(ERR, "Failed to create render pass: %d", r)
-		os.exit(1)
-	}
-
-	return render_pass
-}
-
-create_framebuffers :: proc(
-	device: vulkan.Device,
-	image_views: []vulkan.ImageView,
-	render_pass: vulkan.RenderPass,
-	extent: vulkan.Extent2D,
-) -> []vulkan.Framebuffer {
-	frame_buffers := make([]vulkan.Framebuffer, len(image_views))
-
-	for view, i in image_views {
-		attachments: [1]vulkan.ImageView = {view}
-
-		framebuffer_create_info: vulkan.FramebufferCreateInfo = {
-			sType           = .FRAMEBUFFER_CREATE_INFO,
-			renderPass      = render_pass,
-			attachmentCount = 1,
-			pAttachments    = raw_data(attachments[:]),
-			width           = extent.width,
-			height          = extent.height,
-			layers          = 1,
-		}
-
-		if r := vulkan.CreateFramebuffer(device, &framebuffer_create_info, nil, &frame_buffers[i]);
-		   r != .SUCCESS {
-			sdl2.LogCritical(ERR, "Failed to create framebuffer: %d", r)
-			os.exit(1)
-		}
-
-	}
-
-	return frame_buffers
-}
 
 create_command_pool :: proc(device: vulkan.Device) -> vulkan.CommandPool {
 	command_pool: vulkan.CommandPool = {}
@@ -848,8 +777,7 @@ create_command_buffers :: proc(
 record_command_buffer :: proc(
 	command_buffer: vulkan.CommandBuffer,
 	image_idx: u32,
-	render_pass: vulkan.RenderPass,
-	frame_buffers: []vulkan.Framebuffer,
+	image_views: []vulkan.ImageView,
 	extent: vulkan.Extent2D,
 	pipeline: vulkan.Pipeline,
 ) {
@@ -866,16 +794,24 @@ record_command_buffer :: proc(
 		color = {float32 = {0.0, 0.0, 0.0, 1.0}},
 	}
 
-	render_pass_begin_info: vulkan.RenderPassBeginInfo = {
-		sType = .RENDER_PASS_BEGIN_INFO,
-		renderPass = render_pass,
-		framebuffer = frame_buffers[image_idx],
-		renderArea = {extent = extent},
-		clearValueCount = 1,
-		pClearValues = &clear_color,
+	color_attachment_ref: vulkan.RenderingAttachmentInfo = {
+		sType       = .RENDERING_ATTACHMENT_INFO,
+		imageView   = image_views[image_idx],
+		imageLayout = .COLOR_ATTACHMENT_OPTIMAL,
+		loadOp      = .CLEAR,
+		storeOp     = .STORE,
+		clearValue  = clear_color,
 	}
 
-	vulkan.CmdBeginRenderPass(command_buffer, &render_pass_begin_info, .INLINE)
+	rendering_info: vulkan.RenderingInfo = {
+		sType = .RENDERING_INFO,
+		renderArea = {extent = extent},
+		colorAttachmentCount = 1,
+		pColorAttachments = &color_attachment_ref,
+		layerCount = 1,
+	}
+
+	vulkan.CmdBeginRendering(command_buffer, &rendering_info)
 
 	vulkan.CmdBindPipeline(command_buffer, .GRAPHICS, pipeline)
 
@@ -892,7 +828,7 @@ record_command_buffer :: proc(
 	vulkan.CmdSetScissor(command_buffer, 0, 1, &scissor)
 
 	vulkan.CmdDraw(command_buffer, 3, 1, 0, 0)
-	vulkan.CmdEndRenderPass(command_buffer)
+	vulkan.CmdEndRendering(command_buffer)
 
 	if r := vulkan.EndCommandBuffer(command_buffer); r != .SUCCESS {
 		sdl2.LogCritical(ERR, "Failed to end command buffer: %d", r)
@@ -965,7 +901,6 @@ draw_frame :: proc(renderer: ^Renderer) {
 		os.exit(1)
 	}
 
-
 	image_idx: u32 = 0
 	r := vulkan.AcquireNextImageKHR(
 		renderer.logical_device,
@@ -1005,8 +940,7 @@ draw_frame :: proc(renderer: ^Renderer) {
 	record_command_buffer(
 		renderer.command_buffers[renderer.current_frame],
 		image_idx,
-		renderer.render_pass,
-		renderer.frame_buffers,
+		renderer.image_views,
 		renderer.extent,
 		renderer.pipeline,
 	)
@@ -1064,10 +998,6 @@ draw_frame :: proc(renderer: ^Renderer) {
 }
 
 delete_swapchain :: proc(renderer: ^Renderer) {
-	for f in &renderer.frame_buffers {
-		vulkan.DestroyFramebuffer(renderer.logical_device, f, nil)
-	}
-
 	for iv in &renderer.image_views {
 		vulkan.DestroyImageView(renderer.logical_device, iv, nil)
 	}
@@ -1091,11 +1021,5 @@ recreate_swapchain :: proc(renderer: ^Renderer) {
 		renderer.logical_device,
 		renderer.images,
 		image_format,
-	)
-	renderer.frame_buffers = create_framebuffers(
-		renderer.logical_device,
-		renderer.image_views,
-		renderer.render_pass,
-		renderer.extent,
 	)
 }
