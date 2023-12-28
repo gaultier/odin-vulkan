@@ -7,6 +7,8 @@ import "core:strings"
 import "vendor:sdl2"
 import "vendor:vulkan"
 
+MAX_IN_FLIGHT_IMAGES :: 2
+
 ERR: c.int : c.int(sdl2.LogCategory.ERROR)
 APP: c.int : c.int(sdl2.LogCategory.APPLICATION)
 
@@ -21,22 +23,23 @@ SwapchainSupportDetails :: struct {
 }
 
 Renderer :: struct {
-	extent:                    vulkan.Extent2D,
-	logical_device:            vulkan.Device,
-	command_buffer:            vulkan.CommandBuffer,
-	command_pool:              vulkan.CommandPool,
-	render_pass:               vulkan.RenderPass,
-	frame_buffers:             []vulkan.Framebuffer,
-	pipeline:                  vulkan.Pipeline,
-	physical_device:           vulkan.PhysicalDevice,
-	image_format:              vulkan.Format,
-	images:                    []vulkan.Image,
-	swapchain:                 vulkan.SwapchainKHR,
-	instance:                  vulkan.Instance,
-	image_available_semaphore: vulkan.Semaphore,
-	render_finished_semaphore: vulkan.Semaphore,
-	in_flight_fence:           vulkan.Fence,
-	graphics_queue:            vulkan.Queue,
+	extent:                     vulkan.Extent2D,
+	logical_device:             vulkan.Device,
+	command_buffers:            [MAX_IN_FLIGHT_IMAGES]vulkan.CommandBuffer,
+	command_pool:               vulkan.CommandPool,
+	render_pass:                vulkan.RenderPass,
+	frame_buffers:              []vulkan.Framebuffer,
+	pipeline:                   vulkan.Pipeline,
+	physical_device:            vulkan.PhysicalDevice,
+	image_format:               vulkan.Format,
+	images:                     []vulkan.Image,
+	swapchain:                  vulkan.SwapchainKHR,
+	instance:                   vulkan.Instance,
+	image_available_semaphores: [MAX_IN_FLIGHT_IMAGES]vulkan.Semaphore,
+	render_finished_semaphores: [MAX_IN_FLIGHT_IMAGES]vulkan.Semaphore,
+	in_flight_fences:           [MAX_IN_FLIGHT_IMAGES]vulkan.Fence,
+	graphics_queue:             vulkan.Queue,
+	current_frame:              u32,
 }
 
 get_instance_extensions :: proc(window: ^sdl2.Window) -> []cstring {
@@ -226,17 +229,16 @@ setup :: proc(window: ^sdl2.Window) -> Renderer {
 	pipeline := create_graphics_pipeline(logical_device, extent, render_pass)
 	frame_buffers := create_framebuffers(logical_device, image_views, render_pass, extent)
 	command_pool := create_command_pool(logical_device)
-	command_buffer := create_command_buffer(logical_device, command_pool)
+	command_buffers := create_command_buffers(logical_device, command_pool)
 
-	image_available_semaphore, render_finished_semaphore, in_flight_fence := create_sync_objects(
-		logical_device,
-	)
+	image_available_semaphores, render_finished_semaphores, in_flight_fences :=
+		create_sync_objects(logical_device)
 
 	return(
 		Renderer {
 			extent = extent,
 			pipeline = pipeline,
-			command_buffer = command_buffer,
+			command_buffers = command_buffers,
 			command_pool = command_pool,
 			render_pass = render_pass,
 			frame_buffers = frame_buffers,
@@ -246,9 +248,9 @@ setup :: proc(window: ^sdl2.Window) -> Renderer {
 			image_format = image_format,
 			logical_device = logical_device,
 			physical_device = physical_device,
-			image_available_semaphore = image_available_semaphore,
-			render_finished_semaphore = render_finished_semaphore,
-			in_flight_fence = in_flight_fence,
+			image_available_semaphores = image_available_semaphores,
+			render_finished_semaphores = render_finished_semaphores,
+			in_flight_fences = in_flight_fences,
 			graphics_queue = queue,
 		} \
 	)
@@ -281,22 +283,22 @@ create_logical_device :: proc(
 	priority: f32 = 1.0
 
 	queue_create_info: vulkan.DeviceQueueCreateInfo = {
-		sType            = .DEVICE_QUEUE_CREATE_INFO,
-		queueFamilyIndex = queue_idx,
-		queueCount       = 1,
-		pQueuePriorities = &priority,
-	}
+			sType            = .DEVICE_QUEUE_CREATE_INFO,
+			queueFamilyIndex = queue_idx,
+			queueCount       = 1,
+			pQueuePriorities = &priority,
+		}
 
 	features: vulkan.PhysicalDeviceFeatures = {}
 
 	device_create_info: vulkan.DeviceCreateInfo = {
-		sType                   = .DEVICE_CREATE_INFO,
-		pQueueCreateInfos       = &queue_create_info,
-		queueCreateInfoCount    = 1,
-		pEnabledFeatures        = &features,
-		enabledExtensionCount   = len(REQUIRED_EXTENSIONS),
-		ppEnabledExtensionNames = raw_data(REQUIRED_EXTENSIONS[:]),
-	}
+			sType                   = .DEVICE_CREATE_INFO,
+			pQueueCreateInfos       = &queue_create_info,
+			queueCreateInfoCount    = 1,
+			pEnabledFeatures        = &features,
+			enabledExtensionCount   = len(REQUIRED_EXTENSIONS),
+			ppEnabledExtensionNames = raw_data(REQUIRED_EXTENSIONS[:]),
+		}
 
 	when ODIN_DEBUG {
 		layers := enable_validation_layers()
@@ -805,24 +807,25 @@ create_command_pool :: proc(device: vulkan.Device) -> vulkan.CommandPool {
 	return command_pool
 }
 
-create_command_buffer :: proc(
+create_command_buffers :: proc(
 	device: vulkan.Device,
 	command_pool: vulkan.CommandPool,
-) -> vulkan.CommandBuffer {
+) -> [MAX_IN_FLIGHT_IMAGES]vulkan.CommandBuffer {
+	command_buffers := [MAX_IN_FLIGHT_IMAGES]vulkan.CommandBuffer{}
 	alloc_info: vulkan.CommandBufferAllocateInfo = {
 		sType              = .COMMAND_BUFFER_ALLOCATE_INFO,
 		commandPool        = command_pool,
 		level              = .PRIMARY,
-		commandBufferCount = 1,
+		commandBufferCount = len(command_buffers),
 	}
-	command_buffer: vulkan.CommandBuffer = {}
 
-	if r := vulkan.AllocateCommandBuffers(device, &alloc_info, &command_buffer); r != .SUCCESS {
+	if r := vulkan.AllocateCommandBuffers(device, &alloc_info, raw_data(command_buffers[:]));
+	   r != .SUCCESS {
 		sdl2.LogCritical(ERR, "Failed to allocate command buffers: %d", r)
 		os.exit(1)
 	}
 
-	return command_buffer
+	return command_buffers
 }
 
 record_command_buffer :: proc(
@@ -883,55 +886,61 @@ record_command_buffer :: proc(
 create_sync_objects :: proc(
 	device: vulkan.Device,
 ) -> (
-	vulkan.Semaphore,
-	vulkan.Semaphore,
-	vulkan.Fence,
+	[MAX_IN_FLIGHT_IMAGES]vulkan.Semaphore,
+	[MAX_IN_FLIGHT_IMAGES]vulkan.Semaphore,
+	[MAX_IN_FLIGHT_IMAGES]vulkan.Fence,
 ) {
 	semaphore_create_info: vulkan.SemaphoreCreateInfo = {
 		sType = .SEMAPHORE_CREATE_INFO,
 	}
-
-	image_available_semaphore: vulkan.Semaphore = {}
-	if r := vulkan.CreateSemaphore(
-		device,
-		&semaphore_create_info,
-		nil,
-		&image_available_semaphore,
-	); r != .SUCCESS {
-		sdl2.LogCritical(ERR, "Failed to create semaphore: %d", r)
-		os.exit(1)
-	}
-
-	render_finished_semaphore: vulkan.Semaphore = {}
-	if r := vulkan.CreateSemaphore(
-		device,
-		&semaphore_create_info,
-		nil,
-		&render_finished_semaphore,
-	); r != .SUCCESS {
-		sdl2.LogCritical(ERR, "Failed to create semaphore: %d", r)
-		os.exit(1)
-	}
-
 	fence_create_info: vulkan.FenceCreateInfo = {
 		sType = .FENCE_CREATE_INFO,
 		flags = {.SIGNALED},
 	}
 
-	in_flight_fence: vulkan.Fence = {}
-	if r := vulkan.CreateFence(device, &fence_create_info, nil, &in_flight_fence); r != .SUCCESS {
-		sdl2.LogCritical(ERR, "Failed to create fence: %d", r)
-		os.exit(1)
+	image_available_semaphores := [MAX_IN_FLIGHT_IMAGES]vulkan.Semaphore{}
+	render_finished_semaphores := [MAX_IN_FLIGHT_IMAGES]vulkan.Semaphore{}
+	in_flight_fences := [MAX_IN_FLIGHT_IMAGES]vulkan.Fence{}
+
+	for i := 0; i < MAX_IN_FLIGHT_IMAGES; i += 1 {
+		if r := vulkan.CreateSemaphore(
+			device,
+			&semaphore_create_info,
+			nil,
+			&image_available_semaphores[i],
+		); r != .SUCCESS {
+			sdl2.LogCritical(ERR, "Failed to create semaphore: %d", r)
+			os.exit(1)
+		}
+
+		if r := vulkan.CreateSemaphore(
+			device,
+			&semaphore_create_info,
+			nil,
+			&render_finished_semaphores[i],
+		); r != .SUCCESS {
+			sdl2.LogCritical(ERR, "Failed to create semaphore: %d", r)
+			os.exit(1)
+		}
+
+
+		if r := vulkan.CreateFence(device, &fence_create_info, nil, &in_flight_fences[i]);
+		   r != .SUCCESS {
+			sdl2.LogCritical(ERR, "Failed to create fence: %d", r)
+			os.exit(1)
+		}
 	}
 
-	return image_available_semaphore, render_finished_semaphore, in_flight_fence
+	return image_available_semaphores, render_finished_semaphores, in_flight_fences
 }
 
 draw_frame :: proc(renderer: ^Renderer) {
+	assert(renderer.current_frame < MAX_IN_FLIGHT_IMAGES)
+
 	if r := vulkan.WaitForFences(
 		renderer.logical_device,
 		1,
-		&renderer.in_flight_fence,
+		&renderer.in_flight_fences[renderer.current_frame],
 		true,
 		max(u64),
 	); r != .SUCCESS {
@@ -939,8 +948,11 @@ draw_frame :: proc(renderer: ^Renderer) {
 		os.exit(1)
 	}
 
-	if r := vulkan.ResetFences(renderer.logical_device, 1, &renderer.in_flight_fence);
-	   r != .SUCCESS {
+	if r := vulkan.ResetFences(
+		renderer.logical_device,
+		1,
+		&renderer.in_flight_fences[renderer.current_frame],
+	); r != .SUCCESS {
 		sdl2.LogCritical(ERR, "Failed to reset fences: %d", r)
 		os.exit(1)
 	}
@@ -950,7 +962,7 @@ draw_frame :: proc(renderer: ^Renderer) {
 		renderer.logical_device,
 		renderer.swapchain,
 		max(u64),
-		renderer.image_available_semaphore,
+		renderer.image_available_semaphores[renderer.current_frame],
 		{},
 		&image_idx,
 	); r != .SUCCESS {
@@ -958,14 +970,16 @@ draw_frame :: proc(renderer: ^Renderer) {
 		os.exit(1)
 	}
 
-	if r := vulkan.ResetCommandBuffer(renderer.command_buffer, {.RELEASE_RESOURCES});
-	   r != .SUCCESS {
+	if r := vulkan.ResetCommandBuffer(
+		renderer.command_buffers[renderer.current_frame],
+		{.RELEASE_RESOURCES},
+	); r != .SUCCESS {
 		sdl2.LogCritical(ERR, "Failed to reset command buffer: %d", r)
 		os.exit(1)
 	}
 
 	record_command_buffer(
-		renderer.command_buffer,
+		renderer.command_buffers[renderer.current_frame],
 		image_idx,
 		renderer.render_pass,
 		renderer.frame_buffers,
@@ -973,9 +987,13 @@ draw_frame :: proc(renderer: ^Renderer) {
 		renderer.pipeline,
 	)
 
-	wait_semaphores := [1]vulkan.Semaphore{renderer.image_available_semaphore}
+	wait_semaphores := [1]vulkan.Semaphore {
+		renderer.image_available_semaphores[renderer.current_frame],
+	}
 	wait_stages := [1]vulkan.PipelineStageFlags{{.COLOR_ATTACHMENT_OUTPUT}}
-	signal_semaphores := [?]vulkan.Semaphore{renderer.render_finished_semaphore}
+	signal_semaphores := [?]vulkan.Semaphore {
+		renderer.render_finished_semaphores[renderer.current_frame],
+	}
 
 	submit_info: vulkan.SubmitInfo = {
 		sType                = .SUBMIT_INFO,
@@ -983,13 +1001,17 @@ draw_frame :: proc(renderer: ^Renderer) {
 		pWaitSemaphores      = raw_data(wait_semaphores[:]),
 		pWaitDstStageMask    = raw_data(wait_stages[:]),
 		commandBufferCount   = 1,
-		pCommandBuffers      = &renderer.command_buffer,
+		pCommandBuffers      = &renderer.command_buffers[renderer.current_frame],
 		signalSemaphoreCount = 1,
 		pSignalSemaphores    = raw_data(signal_semaphores[:]),
 	}
 
-	if r := vulkan.QueueSubmit(renderer.graphics_queue, 1, &submit_info, renderer.in_flight_fence);
-	   r != .SUCCESS {
+	if r := vulkan.QueueSubmit(
+		renderer.graphics_queue,
+		1,
+		&submit_info,
+		renderer.in_flight_fences[renderer.current_frame],
+	); r != .SUCCESS {
 		sdl2.LogCritical(ERR, "Failed to submit queue: %d", r)
 		os.exit(1)
 	}
@@ -1009,4 +1031,6 @@ draw_frame :: proc(renderer: ^Renderer) {
 		sdl2.LogCritical(ERR, "Failed to present queue: %d", r)
 		os.exit(1)
 	}
+
+	renderer.current_frame = (renderer.current_frame + 1) % MAX_IN_FLIGHT_IMAGES
 }
