@@ -20,6 +20,24 @@ SwapchainSupportDetails :: struct {
 	present_modes: []vulkan.PresentModeKHR,
 }
 
+Renderer :: struct {
+	extent:                    vulkan.Extent2D,
+	logical_device:            vulkan.Device,
+	command_buffer:            vulkan.CommandBuffer,
+	command_pool:              vulkan.CommandPool,
+	render_pass:               vulkan.RenderPass,
+	frame_buffers:             []vulkan.Framebuffer,
+	pipeline:                  vulkan.Pipeline,
+	physical_device:           vulkan.PhysicalDevice,
+	image_format:              vulkan.Format,
+	images:                    []vulkan.Image,
+	swapchain:                 vulkan.SwapchainKHR,
+	instance:                  vulkan.Instance,
+	image_available_semaphore: vulkan.Semaphore,
+	render_finished_semaphore: vulkan.Semaphore,
+	in_flight_fence:           vulkan.Fence,
+}
+
 get_instance_extensions :: proc(window: ^sdl2.Window) -> []cstring {
 	extension_count: u32 = 0
 	if !sdl2.Vulkan_GetInstanceExtensions(window, &extension_count, nil) {
@@ -172,7 +190,7 @@ is_device_suitable :: proc(
 	return swapchain_support_details, is_gpu && is_swapchain_suitable
 }
 
-setup :: proc(window: ^sdl2.Window) {
+setup :: proc(window: ^sdl2.Window) -> Renderer {
 	instance := create_instance(window)
 
 	surface: vulkan.SurfaceKHR = {}
@@ -208,6 +226,30 @@ setup :: proc(window: ^sdl2.Window) {
 	frame_buffers := create_framebuffers(logical_device, image_views, render_pass, extent)
 	command_pool := create_command_pool(logical_device)
 	command_buffer := create_command_buffer(logical_device, command_pool)
+
+	image_available_semaphore, render_finished_semaphore, in_flight_fence := create_sync_objects(
+		logical_device,
+	)
+
+	return(
+		Renderer {
+			extent = extent,
+			pipeline = pipeline,
+			command_buffer = command_buffer,
+			command_pool = command_pool,
+			render_pass = render_pass,
+			frame_buffers = frame_buffers,
+			instance = instance,
+			swapchain = swapchain,
+			images = images,
+			image_format = image_format,
+			logical_device = logical_device,
+			physical_device = physical_device,
+			image_available_semaphore = image_available_semaphore,
+			render_finished_semaphore = render_finished_semaphore,
+			in_flight_fence = in_flight_fence,
+		} \
+	)
 }
 
 pick_queue_family :: proc(device: vulkan.PhysicalDevice) -> (u32, bool) {
@@ -710,7 +752,7 @@ create_framebuffers :: proc(
 	render_pass: vulkan.RenderPass,
 	extent: vulkan.Extent2D,
 ) -> []vulkan.Framebuffer {
-	framebuffers := make([]vulkan.Framebuffer, len(image_views))
+	frame_buffers := make([]vulkan.Framebuffer, len(image_views))
 
 	for view, i in image_views {
 		attachments: [1]vulkan.ImageView = {view}
@@ -725,7 +767,7 @@ create_framebuffers :: proc(
 			layers          = 1,
 		}
 
-		if r := vulkan.CreateFramebuffer(device, &framebuffer_create_info, nil, &framebuffers[i]);
+		if r := vulkan.CreateFramebuffer(device, &framebuffer_create_info, nil, &frame_buffers[i]);
 		   r != .SUCCESS {
 			sdl2.LogCritical(ERR, "Failed to create framebuffer: %d", r)
 			os.exit(1)
@@ -733,7 +775,7 @@ create_framebuffers :: proc(
 
 	}
 
-	return framebuffers
+	return frame_buffers
 }
 
 create_command_pool :: proc(device: vulkan.Device) -> vulkan.CommandPool {
@@ -770,4 +812,147 @@ create_command_buffer :: proc(
 	}
 
 	return command_buffer
+}
+
+record_command_buffer :: proc(
+	command_buffer: vulkan.CommandBuffer,
+	image_idx: u32,
+	render_pass: vulkan.RenderPass,
+	frame_buffers: []vulkan.Framebuffer,
+	extent: vulkan.Extent2D,
+	pipeline: vulkan.Pipeline,
+) {
+	begin_info: vulkan.CommandBufferBeginInfo = {
+		sType = .COMMAND_BUFFER_BEGIN_INFO,
+	}
+
+	if r := vulkan.BeginCommandBuffer(command_buffer, &begin_info); r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to begin command buffer: %d", r)
+		os.exit(1)
+	}
+
+	clear_color: vulkan.ClearValue = {
+		color = {float32 = {0.0, 0.0, 0.0, 1.0}},
+	}
+
+	render_pass_begin_info: vulkan.RenderPassBeginInfo = {
+		sType = .RENDER_PASS_BEGIN_INFO,
+		renderPass = render_pass,
+		framebuffer = frame_buffers[image_idx],
+		renderArea = {extent = extent},
+		clearValueCount = 1,
+		pClearValues = &clear_color,
+	}
+
+	vulkan.CmdBeginRenderPass(command_buffer, &render_pass_begin_info, .INLINE)
+
+	vulkan.CmdBindPipeline(command_buffer, .GRAPHICS, pipeline)
+
+	viewport: vulkan.Viewport = {
+		width    = f32(extent.width),
+		height   = f32(extent.height),
+		maxDepth = 1.0,
+	}
+	vulkan.CmdSetViewport(command_buffer, 0, 1, &viewport)
+
+	scissor: vulkan.Rect2D = {
+		extent = extent,
+	}
+	vulkan.CmdSetScissor(command_buffer, 0, 1, &scissor)
+
+	vulkan.CmdDraw(command_buffer, 3, 1, 0, 0)
+	vulkan.CmdEndRenderPass(command_buffer)
+
+	if r := vulkan.EndCommandBuffer(command_buffer); r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to end command buffer: %d", r)
+		os.exit(1)
+	}
+}
+
+create_sync_objects :: proc(
+	device: vulkan.Device,
+) -> (
+	vulkan.Semaphore,
+	vulkan.Semaphore,
+	vulkan.Fence,
+) {
+	semaphore_create_info: vulkan.SemaphoreCreateInfo = {
+		sType = .SEMAPHORE_CREATE_INFO,
+	}
+
+	image_available_semaphore: vulkan.Semaphore = {}
+	if r := vulkan.CreateSemaphore(
+		device,
+		&semaphore_create_info,
+		nil,
+		&image_available_semaphore,
+	); r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to create semaphore: %d", r)
+		os.exit(1)
+	}
+
+	render_finished_semaphore: vulkan.Semaphore = {}
+	if r := vulkan.CreateSemaphore(
+		device,
+		&semaphore_create_info,
+		nil,
+		&render_finished_semaphore,
+	); r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to create semaphore: %d", r)
+		os.exit(1)
+	}
+
+	fence_create_info: vulkan.FenceCreateInfo = {
+		sType = .FENCE_CREATE_INFO,
+		flags = {.SIGNALED},
+	}
+
+	in_flight_fence: vulkan.Fence = {}
+	if r := vulkan.CreateFence(device, &fence_create_info, nil, &in_flight_fence); r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to create fence: %d", r)
+		os.exit(1)
+	}
+
+	return image_available_semaphore, render_finished_semaphore, in_flight_fence
+}
+
+draw_frame :: proc(renderer: ^Renderer) {
+	if r := vulkan.WaitForFences(
+		renderer.logical_device,
+		1,
+		&renderer.in_flight_fence,
+		true,
+		max(u64),
+	); r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to wait for fences: %d", r)
+		os.exit(1)
+	}
+
+	image_idx: u32 = 0
+	if r := vulkan.AcquireNextImageKHR(
+		renderer.logical_device,
+		renderer.swapchain,
+		max(u64),
+		renderer.image_available_semaphore,
+		{},
+		&image_idx,
+	); r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to acquire next image: %d", r)
+		os.exit(1)
+	}
+
+	if r := vulkan.ResetCommandBuffer(renderer.command_buffer, {.RELEASE_RESOURCES});
+	   r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to reset command buffer: %d", r)
+		os.exit(1)
+	}
+
+	record_command_buffer(
+		renderer.command_buffer,
+		image_idx,
+		renderer.render_pass,
+		renderer.frame_buffers,
+		renderer.extent,
+		renderer.pipeline,
+	)
 }

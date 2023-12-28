@@ -35,7 +35,7 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	vk.setup(window)
+	renderer := vk.setup(window)
 
 	for {
 		begin_frame_ms := sdl2.GetTicks()
