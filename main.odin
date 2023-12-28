@@ -44,6 +44,13 @@ main :: proc() {
 		e: sdl2.Event = {}
 		for sdl2.PollEvent(&e) {
 			#partial switch e.type {
+			case .WINDOWEVENT:
+				#partial switch e.window.event {
+				case .RESIZED:
+					vk.recreate_swapchain(&renderer)
+				case .SIZE_CHANGED:
+					vk.recreate_swapchain(&renderer)
+				}
 			case .QUIT:
 				os.exit(0)
 			case .KEYDOWN:

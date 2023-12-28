@@ -227,6 +227,7 @@ setup :: proc(window: ^sdl2.Window) -> Renderer {
 		swapchain_support_details,
 		surface,
 		window,
+		{},
 	)
 
 	image_views := create_image_views(logical_device, images, image_format)
@@ -471,6 +472,7 @@ create_swapchain :: proc(
 	details: SwapchainSupportDetails,
 	surface: vulkan.SurfaceKHR,
 	window: ^sdl2.Window,
+	old_swapchain: vulkan.SwapchainKHR,
 ) -> (
 	vulkan.SwapchainKHR,
 	[]vulkan.Image,
@@ -504,11 +506,12 @@ create_swapchain :: proc(
 		compositeAlpha = {.OPAQUE},
 		presentMode = present_mode,
 		clipped = true,
+		oldSwapchain = old_swapchain,
 	}
 
 	swapchain: vulkan.SwapchainKHR = {}
 	if r := vulkan.CreateSwapchainKHR(device, &create_info, nil, &swapchain); r != .SUCCESS {
-		sdl2.LogCritical(ERR, "Failed to get create swapchain: %d", r)
+		sdl2.LogCritical(ERR, "Failed to create swapchain: %d", r)
 		os.exit(1)
 	}
 
@@ -1082,6 +1085,7 @@ recreate_swapchain :: proc(renderer: ^Renderer) {
 		renderer.swapchain_details,
 		renderer.surface,
 		renderer.window,
+		renderer.swapchain,
 	)
 	renderer.image_views = create_image_views(
 		renderer.logical_device,
