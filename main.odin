@@ -46,8 +46,6 @@ main :: proc() {
 			#partial switch e.type {
 			case .WINDOWEVENT:
 				#partial switch e.window.event {
-				case .RESIZED:
-					vk.recreate_swapchain(&renderer)
 				case .SIZE_CHANGED:
 					vk.recreate_swapchain(&renderer)
 				}
