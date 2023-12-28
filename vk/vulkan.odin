@@ -23,6 +23,7 @@ SwapchainSupportDetails :: struct {
 }
 
 Renderer :: struct {
+	window:                     ^sdl2.Window,
 	pipeline_layout:            vulkan.PipelineLayout,
 	image_views:                []vulkan.ImageView,
 	surface:                    vulkan.SurfaceKHR,
@@ -225,6 +226,7 @@ setup :: proc(window: ^sdl2.Window) -> Renderer {
 		logical_device,
 		swapchain_support_details,
 		surface,
+		window,
 	)
 
 	image_views := create_image_views(logical_device, images, image_format)
@@ -239,6 +241,7 @@ setup :: proc(window: ^sdl2.Window) -> Renderer {
 
 	return(
 		Renderer {
+			window = window,
 			pipeline_layout = pipeline_layout,
 			image_views = image_views,
 			extent = extent,
@@ -438,22 +441,23 @@ pick_swapchain_present_mode :: proc(
 	return .FIFO
 }
 
-pick_swapchain_extent :: proc(capabilities: vulkan.SurfaceCapabilitiesKHR) -> vulkan.Extent2D {
+pick_swapchain_extent :: proc(
+	window: ^sdl2.Window,
+	capabilities: vulkan.SurfaceCapabilitiesKHR,
+) -> vulkan.Extent2D {
 	if capabilities.currentExtent.width != max(u32) do return capabilities.currentExtent
 
 	mode: sdl2.DisplayMode = {}
-	if sdl2.GetCurrentDisplayMode(0, &mode) < 0 {
-		sdl2.LogCritical(ERR, "Failed to get current display mode: %s", sdl2.GetError())
-		os.exit(1)
-	}
-
+	window_width: c.int = 0
+	window_height: c.int = 0
+	sdl2.GetWindowSize(window, &window_width, &window_height)
 	w: u32 = clamp(
-		u32(mode.w),
+		u32(window_width),
 		capabilities.minImageExtent.width,
 		capabilities.maxImageExtent.width,
 	)
 	h: u32 = clamp(
-		u32(mode.h),
+		u32(window_height),
 		capabilities.minImageExtent.height,
 		capabilities.maxImageExtent.height,
 	)
@@ -466,6 +470,7 @@ create_swapchain :: proc(
 	device: vulkan.Device,
 	details: SwapchainSupportDetails,
 	surface: vulkan.SurfaceKHR,
+	window: ^sdl2.Window,
 ) -> (
 	vulkan.SwapchainKHR,
 	[]vulkan.Image,
@@ -474,7 +479,7 @@ create_swapchain :: proc(
 ) {
 	surface_format := pick_swapchain_surface_format(details.formats)
 	present_mode := pick_swapchain_present_mode(details.present_modes)
-	extent := pick_swapchain_extent(details.capabilities)
+	extent := pick_swapchain_extent(window, details.capabilities)
 
 	min_image_count := clamp(
 		details.capabilities.minImageCount + 1,
@@ -1076,6 +1081,7 @@ recreate_swapchain :: proc(renderer: ^Renderer) {
 		renderer.logical_device,
 		renderer.swapchain_details,
 		renderer.surface,
+		renderer.window,
 	)
 	renderer.image_views = create_image_views(
 		renderer.logical_device,
