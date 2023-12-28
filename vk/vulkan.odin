@@ -207,6 +207,7 @@ setup :: proc(window: ^sdl2.Window) {
 	pipeline := create_graphics_pipeline(logical_device, extent, render_pass)
 	frame_buffers := create_framebuffers(logical_device, image_views, render_pass, extent)
 	command_pool := create_command_pool(logical_device)
+	command_buffer := create_command_buffer(logical_device, command_pool)
 }
 
 pick_queue_family :: proc(device: vulkan.PhysicalDevice) -> (u32, bool) {
@@ -751,7 +752,10 @@ create_command_pool :: proc(device: vulkan.Device) -> vulkan.CommandPool {
 	return command_pool
 }
 
-create_command_buffer :: proc(device: vulkan.Device, command_pool: vulkan.CommandPool) {
+create_command_buffer :: proc(
+	device: vulkan.Device,
+	command_pool: vulkan.CommandPool,
+) -> vulkan.CommandBuffer {
 	alloc_info: vulkan.CommandBufferAllocateInfo = {
 		sType              = .COMMAND_BUFFER_ALLOCATE_INFO,
 		commandPool        = command_pool,
@@ -764,4 +768,6 @@ create_command_buffer :: proc(device: vulkan.Device, command_pool: vulkan.Comman
 		sdl2.LogCritical(ERR, "Failed to allocate command buffers: %d", r)
 		os.exit(1)
 	}
+
+	return command_buffer
 }
