@@ -450,7 +450,7 @@ pick_swapchain_extent :: proc(
 	mode: sdl2.DisplayMode = {}
 	window_width: c.int = 0
 	window_height: c.int = 0
-	sdl2.GetWindowSize(window, &window_width, &window_height)
+	sdl2.Vulkan_GetDrawableSize(window, &window_width, &window_height)
 	w: u32 = clamp(
 		u32(window_width),
 		capabilities.minImageExtent.width,
