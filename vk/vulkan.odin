@@ -36,6 +36,7 @@ Renderer :: struct {
 	image_available_semaphore: vulkan.Semaphore,
 	render_finished_semaphore: vulkan.Semaphore,
 	in_flight_fence:           vulkan.Fence,
+	graphics_queue:            vulkan.Queue,
 }
 
 get_instance_extensions :: proc(window: ^sdl2.Window) -> []cstring {
@@ -248,6 +249,7 @@ setup :: proc(window: ^sdl2.Window) -> Renderer {
 			image_available_semaphore = image_available_semaphore,
 			render_finished_semaphore = render_finished_semaphore,
 			in_flight_fence = in_flight_fence,
+			graphics_queue = queue,
 		} \
 	)
 }
@@ -955,4 +957,26 @@ draw_frame :: proc(renderer: ^Renderer) {
 		renderer.extent,
 		renderer.pipeline,
 	)
+
+	wait_semaphores := [1]vulkan.Semaphore{renderer.image_available_semaphore}
+	wait_stages := [1]vulkan.PipelineStageFlags{{.COLOR_ATTACHMENT_OUTPUT}}
+	signal_semaphores := [?]vulkan.Semaphore{renderer.render_finished_semaphore}
+
+	submit_info: vulkan.SubmitInfo = {
+		sType                = .SUBMIT_INFO,
+		waitSemaphoreCount   = 1,
+		pWaitSemaphores      = raw_data(wait_semaphores[:]),
+		pWaitDstStageMask    = raw_data(wait_stages[:]),
+		commandBufferCount   = 1,
+		pCommandBuffers      = &renderer.command_buffer,
+		signalSemaphoreCount = 1,
+		pSignalSemaphores    = raw_data(signal_semaphores[:]),
+	}
+
+	if r := vulkan.QueueSubmit(renderer.graphics_queue, 1, &submit_info, renderer.in_flight_fence);
+	   r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to submit queue: %d", r)
+		os.exit(1)
+	}
+
 }
