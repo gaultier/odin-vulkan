@@ -23,6 +23,10 @@ SwapchainSupportDetails :: struct {
 }
 
 Renderer :: struct {
+	pipeline_layout:            vulkan.PipelineLayout,
+	image_views:                []vulkan.ImageView,
+	surface:                    vulkan.SurfaceKHR,
+	swapchain_details:          SwapchainSupportDetails,
 	extent:                     vulkan.Extent2D,
 	logical_device:             vulkan.Device,
 	command_buffers:            [MAX_IN_FLIGHT_IMAGES]vulkan.CommandBuffer,
@@ -31,7 +35,6 @@ Renderer :: struct {
 	frame_buffers:              []vulkan.Framebuffer,
 	pipeline:                   vulkan.Pipeline,
 	physical_device:            vulkan.PhysicalDevice,
-	image_format:               vulkan.Format,
 	images:                     []vulkan.Image,
 	swapchain:                  vulkan.SwapchainKHR,
 	instance:                   vulkan.Instance,
@@ -219,14 +222,14 @@ setup :: proc(window: ^sdl2.Window) -> Renderer {
 	logical_device, queue := create_logical_device(physical_device, queue_family)
 
 	swapchain, images, image_format, extent := create_swapchain(
-		swapchain_support_details,
 		logical_device,
+		swapchain_support_details,
 		surface,
 	)
 
 	image_views := create_image_views(logical_device, images, image_format)
 	render_pass := create_render_pass(logical_device, image_format)
-	pipeline := create_graphics_pipeline(logical_device, extent, render_pass)
+	pipeline, pipeline_layout := create_graphics_pipeline(logical_device, extent, render_pass)
 	frame_buffers := create_framebuffers(logical_device, image_views, render_pass, extent)
 	command_pool := create_command_pool(logical_device)
 	command_buffers := create_command_buffers(logical_device, command_pool)
@@ -236,7 +239,11 @@ setup :: proc(window: ^sdl2.Window) -> Renderer {
 
 	return(
 		Renderer {
+			pipeline_layout = pipeline_layout,
+			image_views = image_views,
 			extent = extent,
+			surface = surface,
+			swapchain_details = swapchain_support_details,
 			pipeline = pipeline,
 			command_buffers = command_buffers,
 			command_pool = command_pool,
@@ -245,7 +252,6 @@ setup :: proc(window: ^sdl2.Window) -> Renderer {
 			instance = instance,
 			swapchain = swapchain,
 			images = images,
-			image_format = image_format,
 			logical_device = logical_device,
 			physical_device = physical_device,
 			image_available_semaphores = image_available_semaphores,
@@ -457,8 +463,8 @@ pick_swapchain_extent :: proc(capabilities: vulkan.SurfaceCapabilitiesKHR) -> vu
 }
 
 create_swapchain :: proc(
-	details: SwapchainSupportDetails,
 	device: vulkan.Device,
+	details: SwapchainSupportDetails,
 	surface: vulkan.SurfaceKHR,
 ) -> (
 	vulkan.SwapchainKHR,
@@ -546,7 +552,10 @@ create_graphics_pipeline :: proc(
 	device: vulkan.Device,
 	swapchain_extent: vulkan.Extent2D,
 	render_pass: vulkan.RenderPass,
-) -> vulkan.Pipeline {
+) -> (
+	vulkan.Pipeline,
+	vulkan.PipelineLayout,
+) {
 	vert_bytecode: []byte
 	ok: bool
 	vert_bytecode, ok = os.read_entire_file_from_filename("vert.spv")
@@ -688,7 +697,7 @@ create_graphics_pipeline :: proc(
 		os.exit(1)
 	}
 
-	return pipeline
+	return pipeline, pipeline_layout
 }
 
 create_shader_module :: proc(device: vulkan.Device, bytecode: []byte) -> vulkan.ShaderModule {
@@ -948,25 +957,32 @@ draw_frame :: proc(renderer: ^Renderer) {
 		os.exit(1)
 	}
 
-	if r := vulkan.ResetFences(
-		renderer.logical_device,
-		1,
-		&renderer.in_flight_fences[renderer.current_frame],
-	); r != .SUCCESS {
-		sdl2.LogCritical(ERR, "Failed to reset fences: %d", r)
-		os.exit(1)
-	}
 
 	image_idx: u32 = 0
-	if r := vulkan.AcquireNextImageKHR(
+	r := vulkan.AcquireNextImageKHR(
 		renderer.logical_device,
 		renderer.swapchain,
 		max(u64),
 		renderer.image_available_semaphores[renderer.current_frame],
 		{},
 		&image_idx,
-	); r != .SUCCESS {
+	)
+	if r == .ERROR_OUT_OF_DATE_KHR {
+		recreate_swapchain(renderer)
+		return
+	}
+
+	if r != .SUCCESS && r != .SUBOPTIMAL_KHR {
 		sdl2.LogCritical(ERR, "Failed to acquire next image: %d", r)
+		os.exit(1)
+	}
+
+	if r := vulkan.ResetFences(
+		renderer.logical_device,
+		1,
+		&renderer.in_flight_fences[renderer.current_frame],
+	); r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to reset fences: %d", r)
 		os.exit(1)
 	}
 
@@ -1027,10 +1043,49 @@ draw_frame :: proc(renderer: ^Renderer) {
 		pImageIndices      = &image_idx,
 	}
 
-	if r := vulkan.QueuePresentKHR(renderer.graphics_queue, &present_info); r != .SUCCESS {
+	r = vulkan.QueuePresentKHR(renderer.graphics_queue, &present_info)
+
+	if r == .ERROR_OUT_OF_DATE_KHR || r == .SUBOPTIMAL_KHR {
+		recreate_swapchain(renderer)
+	} else if r != .SUCCESS {
 		sdl2.LogCritical(ERR, "Failed to present queue: %d", r)
 		os.exit(1)
 	}
 
 	renderer.current_frame = (renderer.current_frame + 1) % MAX_IN_FLIGHT_IMAGES
+}
+
+delete_swapchain :: proc(renderer: ^Renderer) {
+	for f in &renderer.frame_buffers {
+		vulkan.DestroyFramebuffer(renderer.logical_device, f, nil)
+	}
+
+	for iv in &renderer.image_views {
+		vulkan.DestroyImageView(renderer.logical_device, iv, nil)
+	}
+
+	vulkan.DestroySwapchainKHR(renderer.logical_device, renderer.swapchain, nil)
+}
+
+
+recreate_swapchain :: proc(renderer: ^Renderer) {
+	vulkan.DeviceWaitIdle(renderer.logical_device)
+
+	image_format: vulkan.Format = {}
+	renderer.swapchain, renderer.images, image_format, renderer.extent = create_swapchain(
+		renderer.logical_device,
+		renderer.swapchain_details,
+		renderer.surface,
+	)
+	renderer.image_views = create_image_views(
+		renderer.logical_device,
+		renderer.images,
+		image_format,
+	)
+	renderer.frame_buffers = create_framebuffers(
+		renderer.logical_device,
+		renderer.image_views,
+		renderer.render_pass,
+		renderer.extent,
+	)
 }
