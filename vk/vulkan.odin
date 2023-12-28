@@ -745,8 +745,23 @@ create_command_pool :: proc(device: vulkan.Device) -> vulkan.CommandPool {
 
 	if r := vulkan.CreateCommandPool(device, &command_pool_create_info, nil, &command_pool);
 	   r != .SUCCESS {
-		sdl2.LogCritical(ERR, "Failed to get extensions count: %s", sdl2.GetError())
+		sdl2.LogCritical(ERR, "Failed to create command pool: %d", r)
 		os.exit(1)
 	}
 	return command_pool
+}
+
+create_command_buffer :: proc(device: vulkan.Device, command_pool: vulkan.CommandPool) {
+	alloc_info: vulkan.CommandBufferAllocateInfo = {
+		sType              = .COMMAND_BUFFER_ALLOCATE_INFO,
+		commandPool        = command_pool,
+		level              = .PRIMARY,
+		commandBufferCount = 1,
+	}
+	command_buffer: vulkan.CommandBuffer = {}
+
+	if r := vulkan.AllocateCommandBuffers(device, &alloc_info, &command_buffer); r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to allocate command buffers: %d", r)
+		os.exit(1)
+	}
 }
