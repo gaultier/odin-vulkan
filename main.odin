@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import "vendor:sdl2"
+import "vendor:vulkan"
 
 import "vk"
 
@@ -56,18 +57,6 @@ main :: proc() {
 		vk.draw_frame(&renderer)
 
 
-		end_frame_ms := sdl2.GetTicks()
-		assert(begin_frame_ms <= end_frame_ms)
-		elapsed_ms := end_frame_ms - begin_frame_ms
-		if (elapsed_ms < frame_duration_ms) {
-			sdl2.LogWarn(
-				c.int(sdl2.LogCategory.APPLICATION),
-				"%d %d",
-				elapsed_ms,
-				frame_duration_ms,
-			)
-			sdl2.Delay(frame_duration_ms - elapsed_ms)
-		}
-		free_all(context.temp_allocator)
+		vulkan.DeviceWaitIdle(renderer.logical_device)
 	}
 }
