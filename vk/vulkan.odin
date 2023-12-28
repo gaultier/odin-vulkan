@@ -206,6 +206,7 @@ setup :: proc(window: ^sdl2.Window) {
 	render_pass := create_render_pass(logical_device, image_format)
 	pipeline := create_graphics_pipeline(logical_device, extent, render_pass)
 	frame_buffers := create_framebuffers(logical_device, image_views, render_pass, extent)
+	command_pool := create_command_pool(logical_device)
 }
 
 pick_queue_family :: proc(device: vulkan.PhysicalDevice) -> (u32, bool) {
@@ -425,8 +426,11 @@ create_swapchain :: proc(
 	min_image_count := clamp(
 		details.capabilities.minImageCount + 1,
 		details.capabilities.minImageCount,
-		details.capabilities.maxImageCount,
+		details.capabilities.maxImageCount > 0 \
+		? details.capabilities.maxImageCount \
+		: details.capabilities.minImageCount,
 	)
+	assert(min_image_count >= details.capabilities.minImageCount)
 
 	create_info: vulkan.SwapchainCreateInfoKHR = {
 		sType = .SWAPCHAIN_CREATE_INFO_KHR,
@@ -729,4 +733,20 @@ create_framebuffers :: proc(
 	}
 
 	return framebuffers
+}
+
+create_command_pool :: proc(device: vulkan.Device) -> vulkan.CommandPool {
+	command_pool: vulkan.CommandPool = {}
+	command_pool_create_info: vulkan.CommandPoolCreateInfo = {
+		sType = .COMMAND_POOL_CREATE_INFO,
+		flags = {.RESET_COMMAND_BUFFER},
+		queueFamilyIndex = 0,
+	}
+
+	if r := vulkan.CreateCommandPool(device, &command_pool_create_info, nil, &command_pool);
+	   r != .SUCCESS {
+		sdl2.LogCritical(ERR, "Failed to get extensions count: %s", sdl2.GetError())
+		os.exit(1)
+	}
+	return command_pool
 }
