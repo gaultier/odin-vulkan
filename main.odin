@@ -26,7 +26,14 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	window := sdl2.CreateWindow("Hello", 0, 0, 800, 600, {sdl2.WindowFlags.VULKAN})
+	window := sdl2.CreateWindow(
+		"Hello",
+		0,
+		0,
+		800,
+		600,
+		{.VULKAN, .RESIZABLE, .SHOWN, .ALWAYS_ON_TOP},
+	)
 	if window == nil {
 		sdl2.LogCritical(
 			c.int(sdl2.LogCategory.ERROR),
@@ -47,6 +54,8 @@ main :: proc() {
 			case .WINDOWEVENT:
 				#partial switch e.window.event {
 				case .SIZE_CHANGED:
+					vk.recreate_swapchain(&renderer)
+				case .RESIZED:
 					vk.recreate_swapchain(&renderer)
 				}
 			case .QUIT:
